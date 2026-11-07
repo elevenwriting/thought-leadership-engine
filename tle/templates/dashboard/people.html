@@ -1,0 +1,55 @@
+{% extends "dashboard/base.html" %}
+{% block title %}People{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>People</h1>
+    <p class="lead">Who items are credited to. Emails, Slack IDs and other spellings all map to one name.</p>
+  </div>
+</div>
+
+<div class="layout">
+<div>
+  {% if people %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Name</th><th>Role</th><th>Emails</th><th class="num">Items</th></tr></thead>
+    <tbody>{% for p in people %}
+      <tr>
+        <td><a class="item-title" href="/dashboard/people/{{ p.id }}">{{ p.name }}</a>{% if not p.active %} <span class="chip" style="margin-left: 6px">Left</span>{% endif %}
+          {% if p.aliases %}<div class="item-meta">also {{ p.aliases | join(", ") }}</div>{% endif %}</td>
+        <td class="small{{ ' faint' if not p.active }}">{{ p.role }}</td>
+        <td class="small{{ ' faint' if not p.active }}">{{ p.emails | join(", ") }}</td>
+        <td class="num{{ ' faint' if not p.active }}">{{ counts[p.name] }}</td>
+      </tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<div class="empty">No people yet. Add the first one here.</div>{% endif %}
+
+  {% if unmatched %}
+  <h2>Names that match no one</h2>
+  <p class="small muted" style="margin: -6px 0 14px">Authors on items who aren't in the list: outside guests, or someone under another spelling.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Name</th><th class="num">Items</th><th>Who is this?</th></tr></thead>
+    <tbody>{% for name, n in unmatched %}
+      <tr><td><a href="/dashboard/items?author={{ quote(name) }}">{{ name }}</a></td><td class="num">{{ n }}</td>
+        <td><form method="post" action="/dashboard/people/unmatched" style="display: flex; gap: 8px">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="name" value="{{ name }}">
+          <select name="person_id" style="width: 240px" aria-label="Who is {{ name }}?"><option value="">A new person</option>
+            {% for p in people %}<option value="{{ p.id }}">Same as {{ p.name }}</option>{% endfor %}</select>
+          <button>Save</button></form></td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% endif %}
+</div>
+
+<form method="post" action="/dashboard/people" class="panel">
+  <h2>Add a person</h2>
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label for="n" style="margin-top: 0">Name</label><input id="n" name="name" required>
+  <label for="r">Role</label><input id="r" name="role">
+  <label for="e">Emails <span class="hint">comma-separated</span></label><input id="e" name="emails">
+  <label for="s">Slack member ID <span class="hint">e.g. U01234567</span></label><input id="s" name="slack_id">
+  <label for="o">Other spellings <span class="hint">comma-separated</span></label><input id="o" name="aliases">
+  <label for="rf">Responsible for <span class="hint">comma-separated</span></label><input id="rf" name="responsible_for">
+  <div class="actions"><button class="primary">Add</button></div>
+</form>
+</div>
+{% endblock %}

@@ -1,0 +1,32 @@
+# Create the Slack app from this manifest: api.slack.com/apps > Create New App > From a manifest.
+# Replace YOUR-SERVICE-URL (the deploy prints it), install it to your workspace, then put the
+# Bot User OAuth Token (xoxb-...) in SLACK_BOT_TOKEN and the Signing Secret (Basic Information >
+# App Credentials) in SLACK_SIGNING_SECRET. Then pick channels under Slack in the dashboard's
+# Settings: the bot joins public ones itself; invite it to private ones with /invite.
+display_information:
+  name: Expertise Database
+  description: Saves ideas from chosen channels to the Expertise Database.
+features:
+  bot_user:
+    display_name: Expertise Database
+    always_online: false
+oauth_config:
+  scopes:
+    bot:
+      - channels:history
+      - channels:join
+      - channels:read
+      - files:read
+      - groups:history
+      - groups:read
+      - reactions:read
+      - users:read
+settings:
+  event_subscriptions:
+    request_url: https://YOUR-SERVICE-URL/slack/events
+    bot_events:
+      - message.channels
+      - message.groups
+      - reaction_added
+  org_deploy_enabled: false
+  socket_mode_enabled: false

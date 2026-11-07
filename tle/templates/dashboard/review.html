@@ -1,0 +1,93 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Needs review{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Needs review</h1>
+    <p class="lead">Items the pipeline couldn't finish on its own. Fix them here, or open one for everything.</p>
+  </div>
+</div>
+
+<datalist id="people-list">{% for name in people %}<option value="{{ name }}">{% endfor %}</datalist>
+
+{% if counts %}
+<div class="tabs">
+  <a href="/dashboard/review" {% if not flag %}aria-current="page"{% endif %}>All <span class="n">{{ counts.values() | sum }}</span></a>
+  {% for key, n in counts.items() %}
+    <a href="/dashboard/review?flag={{ key }}" {% if flag == key %}aria-current="page"{% endif %}>{{ key | flag }} <span class="n">{{ n }}</span></a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% set back = "/dashboard/review" ~ ("?flag=" ~ flag if flag else "") %}
+{% for item in items %}
+<div class="card">
+  <div class="card-head">
+    <div>
+      <div class="card-title"><a href="/dashboard/items/{{ item.row_id }}">{{ item.source_metadata.get("label") or item.source_metadata.get("subject") or item.source_type }}</a></div>
+      <div class="citation" style="margin-top: 8px">{{ item.citation }}</div>
+    </div>
+    <div class="chips">{% for f in item.flags %}<span class="chip flag{{ ' error' if f == 'tagging_failed' }}">{{ f | flag }}</span>{% endfor %}</div>
+  </div>
+  <p class="small muted" style="margin: 12px 0 0">{{ item.summary or (item.extracted_text | truncate(240)) }} Saved {{ item.date_ingested | date }}.</p>
+
+  <div class="fixes">
+    {% if "tagging_failed" in item.flags %}
+    <div class="fix" style="flex: 1; align-items: center">
+      <span class="small" style="color: var(--err)">{{ item.source_metadata.get("tagging_error", "Tagging failed.") | truncate(160) }}</span>
+    </div>
+    <form method="post" action="/dashboard/items/{{ item.row_id }}/retag" class="fix">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="{{ back }}">
+      <a class="small" href="/dashboard/items/{{ item.row_id }}">Open</a>
+      <button class="primary">Tag again</button>
+    </form>
+    {% endif %}
+    {% if "author_unclear" in item.flags %}
+    <form method="post" action="/dashboard/items/{{ item.row_id }}" class="fix">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="{{ back }}">
+      <div><label for="a-{{ item.row_id }}">Author{% if item.source_metadata.get("author_reason") %} <span class="hint">({{ item.source_metadata["author_reason"] | truncate(80) }})</span>{% endif %}</label>
+        <input id="a-{{ item.row_id }}" name="authors" list="people-list" placeholder="Start typing a name"
+               value="{{ item.authors | join(', ') if item.authors != ['Unknown'] else '' }}" required></div>
+      <button class="primary">Set author</button>
+    </form>
+    {% endif %}
+    {% if "unknown_source" in item.flags %}
+    <form method="post" action="/dashboard/items/{{ item.row_id }}" class="fix">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="{{ back }}">
+      <div><label for="s-{{ item.row_id }}">Source type{% if item.source_metadata.get('source_type_given') %} <span class="hint">(given as “{{ item.source_metadata['source_type_given'] }}”)</span>{% endif %}</label>
+        <select id="s-{{ item.row_id }}" name="source_type">{% for t in source_types %}<option {% if t == item.source_type %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+      <button class="primary">Set source</button>
+    </form>
+    {% endif %}
+    {% if "theme_ideas" in item.flags %}
+    <div style="flex: 1">
+      <div class="label" style="margin-top: 0">Theme ideas from the tagger <span class="hint">add one to the taxonomy</span></div>
+      <div class="chips">
+      {% for idea in item.source_metadata.get("suggested_themes", []) %}
+        <form method="post" action="/dashboard/taxonomy/themes">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="name" value="{{ idea }}">
+          <input type="hidden" name="from_idea" value="on">
+          <button class="sm" title="Add as a theme">+ {{ idea }}</button>
+        </form>
+      {% endfor %}
+      </div>
+    </div>
+    <div class="fix">
+      {% if "tagging_failed" not in item.flags %}
+      <form method="post" action="/dashboard/items/{{ item.row_id }}/retag">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="{{ back }}">
+        <button>Tag again</button>
+      </form>
+      {% endif %}
+      <form method="post" action="/dashboard/items/{{ item.row_id }}/dismiss-themes">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="{{ back }}">
+        <button class="linkish">Dismiss ideas</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<div class="empty">Nothing needs review.</div>
+{% endfor %}
+{% endblock %}

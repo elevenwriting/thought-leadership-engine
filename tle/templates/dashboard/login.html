@@ -1,0 +1,23 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block body %}
+<div class="login-wrap">
+<div class="login">
+  <p class="eyebrow">{{ company }}</p>
+  <h1>Signing in</h1>
+  <p class="lead" style="margin-bottom: 28px">To the Expertise Database: everything your team has said, tagged and ready to use.</p>
+  <div class="panel">
+    {% if on_cloud_run %}
+      <p style="margin: 0">You sign in with your Google account, through Google Cloud's Identity-Aware Proxy, before this page. Reaching it means that didn't happen.</p>
+      <ul class="small muted" style="margin: 12px 0 0; padding-left: 18px">
+        <li>Open the dashboard's own address (the one ending <span class="mono">-dashboard…run.app</span>), not the API's.</li>
+        <li>If you were signed in{% if iap_header %} (Google did sign you in, but the app couldn't confirm it){% endif %}, ask whoever set it up to check that IAP is on for the dashboard, and that <span class="mono">TLE_IAP_AUDIENCE</span> is set on it.</li>
+        <li>If Google says you don't have access, ask them to add you in the IAP console.</li>
+      </ul>
+    {% else %}
+      <p style="margin: 0">Deployed, people sign in with their Google account before reaching the dashboard. For development, set <span class="mono">TLE_DEV_USER</span> to an email address and restart the server.</p>
+    {% endif %}
+  </div>
+</div>
+</div>
+{% endblock %}

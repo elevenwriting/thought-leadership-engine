@@ -1,0 +1,56 @@
+{% extends "dashboard/base.html" %}
+{% block title %}{{ person.name }}{% endblock %}
+{% block content %}
+<a class="crumb" href="/dashboard/people">{{ icon("chevron-left") }}People</a>
+<div class="page-head">
+  <div>
+    <h1>{{ person.name }}</h1>
+    <p class="lead">{{ person.role }}{% if person.role %} · {% endif %}{{ items | length }} item{{ "s" if items | length != 1 }}{% if not person.active %} · Left{% endif %}</p>
+  </div>
+</div>
+
+<div class="layout">
+<div>
+  {% if themes or narratives %}
+  <div class="panel">
+    <h3>Themes</h3>
+    <div class="chips">{% for t, n in themes.most_common() %}<a class="chip theme" href="/dashboard/items?author={{ quote(person.name) }}&theme={{ quote(t) }}">{{ t }} <span class="n">{{ n }}</span></a>{% else %}<span class="small faint">None yet</span>{% endfor %}</div>
+    <h3 style="margin-top: 20px">Narratives</h3>
+    <div class="chips">{% for t, n in narratives.most_common() %}<span class="chip narrative">{{ t }} <span class="n">{{ n }}</span></span>{% else %}<span class="small faint">None yet</span>{% endfor %}</div>
+  </div>
+  {% endif %}
+
+  <h2>Items</h2>
+  {% if items %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Date</th><th>Item</th><th>Themes</th><th>Status</th></tr></thead>
+    <tbody>{% with columns=["date", "themes", "status"], meta="source", compact=true %}{% for item in items %}{% include "dashboard/_item_row.html" %}{% endfor %}{% endwith %}</tbody>
+  </table></div>
+  <div class="pager"><span>{{ items | length }} item{{ "s" if items | length != 1 }}</span><a class="button sm" href="/dashboard/items?author={{ quote(person.name) }}">Open in Items</a></div>
+  {% else %}<div class="empty">Nothing credited to {{ person.name }} yet.</div>{% endif %}
+</div>
+
+<div>
+<form method="post" action="/dashboard/people/{{ person.id }}" class="panel">
+  <h2>Details</h2>
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label for="pn" style="margin-top: 0">Name <span class="hint">renaming updates their items</span></label><input id="pn" name="name" value="{{ person.name }}" required>
+  <label for="pr">Role</label><input id="pr" name="role" value="{{ person.role }}">
+  <label for="pe">Emails</label><input id="pe" name="emails" value="{{ person.emails | join(', ') }}">
+  <label for="ps">Slack member ID</label><input id="ps" name="slack_id" value="{{ person.slack_id }}">
+  <label for="pa">Other spellings</label><input id="pa" name="aliases" value="{{ person.aliases | join(', ') }}">
+  <label for="pf">Responsible for</label><input id="pf" name="responsible_for" value="{{ person.responsible_for | join(', ') }}">
+  <label class="check" style="margin-top: 18px"><input type="checkbox" name="active" {% if person.active %}checked{% endif %}> Still at the company</label>
+  <div class="actions"><button class="primary">Save</button></div>
+</form>
+<details class="panel">
+  <summary class="small" style="color: var(--err)">Remove {{ person.name }}</summary>
+  <form method="post" action="/dashboard/people/{{ person.id }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="delete" value="yes">
+    <p class="small muted">Their items keep their name; they just won't be matched any more.</p>
+    <button class="danger">Remove</button>
+  </form>
+</details>
+</div>
+</div>
+{% endblock %}

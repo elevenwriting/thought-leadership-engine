@@ -1,0 +1,104 @@
+# Test data: a made-up company's settings and people, saved into each test's database.
+company: Acme Ltd
+llm:
+  provider: anthropic
+  model: claude-sonnet-5-5
+  max_input_chars: 150000
+transcription:
+  provider: openai
+  model: gpt-4o-transcribe
+people:
+- name: Jane Smith
+  role: CEO
+  email: jane@acme.com
+  slack_id: U01234567
+  responsible_for:
+  - Company vision
+  - Fundraising
+- name: Mo Jones
+  role: Head of Product
+  email: mo@acme.com
+  slack_id: U07654321
+  responsible_for:
+  - Roadmap
+  - Customer research
+themes:
+- name: Buyers distrust AI-generated content
+  description: Why audiences discount content that reads as machine-written, and what
+    earns trust back.
+- name: Expertise is the moat
+  description: First-hand experience as the thing competitors and AI can't copy.
+- name: Measuring content beyond traffic
+  description: Pipeline, influence and brand metrics as alternatives to sessions and
+    rankings.
+narratives:
+- name: Counter-narrative
+  description: A strongly held opinion that goes against the prevailing view.
+- name: Predictions
+  description: A forecast about where the industry, market or practice is heading.
+- name: Myth busting
+  description: Takes a widely held belief and shows why it's wrong or incomplete.
+- name: Industry analysis
+  description: Reads a trend, event or data point and explains what it means.
+- name: Frameworks
+  description: A repeatable model, process or method the company uses.
+- name: Behind the scenes
+  description: How the company actually works, decides, fails and learns.
+- name: Brand narrative
+  description: The company's story, mission and reason for existing.
+- name: Data storytelling
+  description: A finding from the company's own data, told as a story.
+formats:
+- LinkedIn post
+- Blog article
+- Whitepaper
+- Newsletter
+- Podcast episode
+- Short-form video
+- Infographic
+- Case study
+sources:
+  default_visibility:
+    slack: private
+    clickup: private
+    meeting: private
+    document: private
+    voicenote: private
+    braindump: private
+    interview: public
+    linkedin: public
+    marketing: public
+    web: public
+    email: private
+    other: private
+  slack:
+    channels:
+    - id: C01234567
+      name: ideas
+      mode: reaction
+      reaction: round_pushpin
+      include_threads: true
+      include_files: true
+      include_links: true
+  files:
+    pdf_fallback: llm
+    min_chars_per_page: 100
+    pages_per_call: 8
+    max_pdf_pages: 50
+  links:
+    render: auto
+    min_chars: 400
+    timeout_seconds: 30
+  email:
+    only_people: false
+    gmail:
+      inbox: ideas@acme.com
+      service_account: tle-runner@your-gcp-project.iam.gserviceaccount.com
+      processed_label: tle-saved
+      rejected_label: tle-rejected
+  drive:
+    folders: []
+  clickup:
+    chat_look_back_days: 7
+    places: []
+    channels: []

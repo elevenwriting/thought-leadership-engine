@@ -1,0 +1,121 @@
+{% extends "dashboard/base.html" %}
+{% set label = item.source_metadata.get("label") or item.source_metadata.get("subject") or item.source_type %}
+{% block title %}{{ label }}{% endblock %}
+{% block content %}
+<a class="crumb" href="/dashboard/items">{{ icon("chevron-left") }}Items</a>
+<div class="page-head" style="margin-bottom: 20px">
+  <div>
+    <h1>{{ label }}</h1>
+    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 10px">
+      <span class="citation">{{ item.citation }}</span>
+      <span class="status {{ item.status if item.status != 'reviewed' }}">{{ item.status | capitalize }}</span>
+      {% if item.visibility == "private" %}<span class="chip private">{{ icon("lock") }}Private</span>{% endif %}
+    </div>
+  </div>
+</div>
+
+<datalist id="people-list">{% for name in people %}<option value="{{ name }}">{% endfor %}</datalist>
+
+<div class="layout">
+<div>
+  <form method="post" action="/dashboard/items/{{ item.row_id }}" class="panel">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="has_tags" value="1">
+    {% if item.flags %}<div class="chips" style="margin-bottom: 4px">{% for f in item.flags %}<span class="chip flag{{ ' error' if f == 'tagging_failed' }}">{{ f | flag }}</span>{% endfor %}</div>{% endif %}
+    {% if item.source_metadata.get("tagging_error") %}<p class="small" style="color: var(--err); margin: 8px 0 0">Tagging failed: {{ item.source_metadata["tagging_error"] }}</p>{% endif %}
+    <div class="grid2">
+      <div><label for="authors">Authors <span class="hint">comma-separated</span></label>
+        <input id="authors" name="authors" list="people-list" value="{{ item.authors | join(', ') }}" required>
+        {% if item.source_metadata.get("author_reason") %}<div class="field-note">{{ item.source_metadata["author_reason"] }}</div>{% endif %}</div>
+      <div><label for="date">Date said or written</label><input id="date" type="date" name="date_created" value="{{ item.date_created.strftime('%Y-%m-%d') }}"></div>
+      <div><label for="label">Label <span class="hint">for the citation</span></label><input id="label" name="label" value="{{ item.source_metadata.get('label', '') }}"></div>
+      <div><label for="source_type">Source</label><select id="source_type" name="source_type">
+        {% for t in source_types %}<option value="{{ t }}" {% if t == item.source_type %}selected{% endif %}>{{ t | capitalize }}</option>{% endfor %}</select></div>
+      <div><label for="visibility">Visibility</label><select id="visibility" name="visibility">
+        {% for v in visibilities %}<option value="{{ v }}" {% if v == item.visibility %}selected{% endif %}>{{ v | capitalize }}</option>{% endfor %}</select></div>
+      <div><label for="status">Status</label><select id="status" name="status">
+        {% for s in statuses %}<option value="{{ s }}" {% if s == item.status %}selected{% endif %}>{{ s | capitalize }}</option>{% endfor %}</select></div>
+    </div>
+    <label for="summary">Summary</label>
+    <textarea id="summary" name="summary">{{ item.summary }}</textarea>
+
+    <div class="label">Themes</div>
+    <div class="toggles">
+      {% for t in themes %}<label class="toggle"><input type="checkbox" name="theme_tags" value="{{ t.name }}" {% if t.name in item.theme_tags %}checked{% endif %}><span>{{ t.name }}</span></label>{% endfor %}
+      {% for t in item.theme_tags if t not in themes | map(attribute="name") %}<label class="toggle"><input type="checkbox" name="theme_tags" value="{{ t }}" checked><span>{{ t }} <span class="stale">(no longer a theme)</span></span></label>{% endfor %}
+    </div>
+    {% if item.source_metadata.get("suggested_themes") %}<p class="small muted" style="margin: 10px 0 0">Theme ideas from the tagger: {{ item.source_metadata["suggested_themes"] | join(", ") }}</p>{% endif %}
+
+    <div class="label">Narratives</div>
+    <div class="toggles">
+      {% for n in narratives %}<label class="toggle narrative"><input type="checkbox" name="narrative_tags" value="{{ n.name }}" {% if n.name in item.narrative_tags %}checked{% endif %}><span>{{ n.name }}</span></label>{% endfor %}
+      {% for n in item.narrative_tags if n not in narratives | map(attribute="name") %}<label class="toggle narrative"><input type="checkbox" name="narrative_tags" value="{{ n }}" checked><span>{{ n }} <span class="stale">(no longer a narrative)</span></span></label>{% endfor %}
+    </div>
+
+    <details style="margin-top: 24px">
+      <summary class="label" style="display: inline">Full text <span class="hint">{{ "{:,}".format(item.extracted_text.split() | length) }} words</span></summary>
+      <textarea name="extracted_text" class="tall" style="margin-top: 8px">{{ item.extracted_text }}</textarea>
+    </details>
+    <div class="actions"><button class="primary">Save changes</button></div>
+  </form>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Deliverables</h2><span class="small faint">What's been made from this</span></div>
+    {% if item.deliverables %}
+    <ul class="list-rows">{% for d in item.deliverables %}
+      {% set fmt, _, title = d.partition(": ") %}
+      <li>{% if title %}<span class="chip">{{ fmt }}</span>{% else %}{% set title = d %}{% endif %}
+        <span class="grow">{% if title.startswith("http") %}<a href="{{ title }}" rel="noopener">{{ title }}</a>{% else %}{{ title }}{% endif %}</span>
+        <form method="post" action="/dashboard/items/{{ item.row_id }}/deliverables">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="remove" value="{{ loop.index0 }}">
+          <button class="linkish small">Remove</button></form></li>{% endfor %}</ul>
+    {% else %}<p class="muted small" style="margin: 0">Nothing made from this yet.</p>{% endif %}
+    <form method="post" action="/dashboard/items/{{ item.row_id }}/deliverables" class="grid3" style="grid-template-columns: 200px minmax(0, 1fr) auto; align-items: end; margin-top: 8px">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div><label for="fmt">Format</label><select id="fmt" name="format">{% for f in formats %}<option>{{ f }}</option>{% endfor %}<option>Other</option></select></div>
+      <div><label for="dt">Title or link</label><input id="dt" name="title" placeholder="https:// or a working title" required></div>
+      <div><button>Add deliverable</button></div>
+    </form>
+  </div>
+</div>
+
+<div>
+  <div class="panel">
+    <h3>Actions</h3>
+    <form method="post" action="/dashboard/items/{{ item.row_id }}/retag" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button>{{ icon("refresh") }}Tag again</button>
+      <span class="small faint">Replaces the summary and tags.</span>
+    </form>
+    <details style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line)">
+      <summary class="small" style="color: var(--err)">Delete this item</summary>
+      <form method="post" action="/dashboard/items/{{ item.row_id }}/delete">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label class="check small" style="margin-top: 12px; align-items: flex-start"><input type="checkbox" name="confirm" value="yes" style="margin-top: 3px"><span>Delete it for good. Setting the status to archived hides it instead.</span></label>
+        <div class="actions" style="margin-top: 8px"><button class="danger">Delete</button></div>
+      </form>
+    </details>
+  </div>
+
+  <div class="panel">
+    <h3>Source</h3>
+    <dl class="meta">
+      <dt>Saved</dt><dd>{{ item.date_ingested | date(true) }}</dd>
+      {% for k, v in metadata.items() %}<dt>{{ k.replace("_", " ") | capitalize }}</dt><dd>{% if v is string and v.startswith("http") %}<a href="{{ v }}" rel="noopener">{{ v | truncate(60) }}</a>{% else %}{{ v | show }}{% endif %}</dd>{% endfor %}
+      {% if item.source_metadata.get("note") %}<dt>Note</dt><dd>{{ item.source_metadata["note"] }}</dd>{% endif %}
+      <dt>ID</dt><dd class="xs mono faint">{{ item.row_id }}</dd>
+    </dl>
+  </div>
+
+  <div class="panel">
+    <h3>History</h3>
+    {% if history %}<ul class="history">{% for e in history %}
+      <li class="{{ 'saved' if e.kind == 'item_saved' else e.level if e.level != 'info' }}"><time>{{ e.time | date(true) }} · {{ e.actor or "System" }}</time>{{ e.message }}
+        {% for field, change in e.details.get("changes", {}).items() %}{% if field not in ("extracted_text", "source_metadata") %}
+          <div class="change">{{ field.replace("_", " ") }}: <s>{{ change[0] | show }}</s> → {{ change[1] | show }}</div>{% endif %}{% endfor %}
+      </li>{% endfor %}</ul>
+    {% else %}<p class="muted small" style="margin: 0">No changes recorded.</p>{% endif %}
+  </div>
+</div>
+</div>
+{% endblock %}

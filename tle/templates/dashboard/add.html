@@ -1,0 +1,331 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Add{% endblock %}
+{% block main_class %}narrow add{% endblock %}
+{% block head %}<style>main.add { max-width: 760px; } [hidden] { display: none !important; }</style>{% endblock %}
+{% block content %}
+<ol class="steps" id="steps">
+  <li aria-current="step"><span class="dot">1</span>Add</li>
+  <li><span class="dot">2</span>Check and edit</li>
+  <li><span class="dot">3</span>Saved</li>
+</ol>
+
+<!-- Step 1: what to add -->
+<section id="add-step">
+  <div class="page-head" style="margin-bottom: 0">
+    <h1>Add thought leadership</h1>
+    {% if not user %}<button class="linkish small" id="toggle-settings" type="button">API token</button>{% endif %}
+  </div>
+  <p class="lead" style="margin-bottom: 28px">Paste something, upload a file or share a link. You'll see how it's been read and tagged, and can change anything before it's saved.</p>
+
+  <div class="panel" id="settings" hidden style="margin-bottom: 16px">
+    <label for="token" style="margin-top: 0">API token <span class="hint">stored in this browser only</span></label>
+    <input id="token" type="password" autocomplete="off">
+    <p class="field-note">Or <a href="/dashboard/login?next=/dashboard">sign in to the dashboard</a>, and the token isn't needed.</p>
+  </div>
+
+  <form id="add" class="panel">
+    <div class="segmented" role="group" aria-label="What are you adding?">
+      <button type="button" data-mode="text" aria-pressed="true">Paste text</button>
+      <button type="button" data-mode="file" aria-pressed="false">Upload a file</button>
+      <button type="button" data-mode="link" aria-pressed="false">Share a link</button>
+    </div>
+
+    <div data-for="text">
+      <label for="text">Text</label>
+      <textarea id="text" placeholder="A braindump, a post, meeting notes..." style="min-height: 180px"></textarea>
+    </div>
+    <div data-for="file" hidden>
+      <label for="file">File <span class="hint">PDF, DOCX, TXT, VTT/SRT, image or audio</span></label>
+      <div class="drop"><input id="file" type="file"></div>
+    </div>
+    <div data-for="link" hidden>
+      <label for="url">Link <span class="hint">an article, post, interview or PDF</span></label>
+      <input id="url" type="url" placeholder="https://">
+    </div>
+
+    <label for="note">Note <span class="hint">optional: what this is or what matters in it</span></label>
+    <input id="note" placeholder="e.g. Jane's take on pricing, the second half is the good bit">
+
+    <label for="authors">Author(s) <span class="hint">optional: leave blank to work it out from the content</span></label>
+    <input id="authors" placeholder="Name or email, comma-separated">
+
+    <div class="grid2">
+      <div><label for="source_type">Source</label><select id="source_type" class="source-types"><option value="">Work it out</option></select></div>
+      <div><label for="visibility">Visibility</label><select id="visibility" class="visibilities"><option value="">Default for this source</option></select></div>
+    </div>
+
+    <div class="actions" style="margin-top: 28px">
+      <button class="primary" type="submit" style="flex: 1; min-height: 48px">Preview</button>
+    </div>
+    <div id="add-status" role="status"></div>
+  </form>
+
+  {% if user %}<p class="small faint" style="margin-top: 16px">Signed in, so no API token is needed here. From Slack, email or Drive, items arrive on their own.</p>{% endif %}
+</section>
+
+<!-- Step 2: review and edit -->
+<section id="review-step" hidden>
+  <h1>Check and edit</h1>
+  <p class="lead" style="margin-bottom: 20px">This is how it'll be cited and tagged. Change anything, then save.</p>
+
+  <form id="review" class="panel">
+    <div class="label" style="margin-top: 0">Citation</div>
+    <div class="citation" id="citation" style="font-size: 13px; padding: 10px 14px; display: block"></div>
+    <div id="author-notice"></div>
+
+    <label for="r-authors">Author(s)</label>
+    <input id="r-authors">
+    <div class="grid2">
+      <div><label for="r-date">Date said or written</label><input id="r-date" type="date"></div>
+      <div><label for="r-label">Label <span class="hint">shown in the citation</span></label><input id="r-label" placeholder="e.g. #strategy or Q3 offsite"></div>
+      <div><label for="r-source_type">Source</label><select id="r-source_type" class="source-types"></select></div>
+      <div><label for="r-visibility">Visibility</label><select id="r-visibility" class="visibilities"></select></div>
+    </div>
+
+    <label for="r-summary">Summary</label>
+    <textarea id="r-summary"></textarea>
+
+    <div class="label">Themes</div>
+    <div class="toggles" id="r-themes"></div>
+    <p class="small muted" id="r-suggested" style="margin: 10px 0 0"></p>
+
+    <div class="label">Narratives</div>
+    <div class="toggles narrative" id="r-narratives"></div>
+
+    <details style="margin-top: 24px">
+      <summary class="label" style="display: inline">Full text</summary>
+      <textarea id="r-text" class="tall" style="margin-top: 8px"></textarea>
+    </details>
+
+    <div class="actions" style="margin-top: 28px">
+      <button type="button" id="back" style="min-height: 48px">Back</button>
+      <button class="primary" type="submit" style="flex: 1; min-height: 48px">Save</button>
+    </div>
+    <div id="review-status" role="status"></div>
+  </form>
+</section>
+
+<!-- Step 3: saved -->
+<section id="done-step" hidden>
+  <h1>Saved</h1>
+  <div class="panel">
+    <div class="citation" id="done-citation" style="font-size: 13px; padding: 10px 14px; display: block"></div>
+    <div class="actions" style="margin-top: 16px">
+      <button class="primary" type="button" id="again">Add another</button>
+      <a class="small" id="open-item" href="/dashboard/items">Open the item</a>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const $ = (id) => document.getElementById(id);
+  const SOURCE_LABELS = {
+    braindump: "Braindump", meeting: "Meeting notes or transcript", voicenote: "Voice note", document: "Documentation",
+    interview: "Interview", linkedin: "LinkedIn post", web: "Web page or article", marketing: "Marketing content",
+    slack: "Slack", clickup: "ClickUp", email: "Email", other: "Other",
+  };
+  const WARN_ICON = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 2.5 20h19L12 4z"/><path d="M12 10v4M12 17h.01"/></svg>';
+  let mode = "text", taxonomy = null, draft = null;
+
+  const store = {
+    get: (k) => { try { return localStorage.getItem(k) || ""; } catch { return ""; } },
+    set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
+  };
+  $("token").value = store.get("tle_token");
+  $("authors").value = store.get("tle_authors");
+  if ($("toggle-settings")) $("toggle-settings").onclick = () => { $("settings").hidden = !$("settings").hidden; };
+  $("token").addEventListener("change", () => { store.set("tle_token", $("token").value.trim()); loadTaxonomy(); });
+
+  for (const sel of document.querySelectorAll(".source-types"))
+    for (const [value, text] of Object.entries(SOURCE_LABELS)) sel.add(new Option(text, value));
+  for (const sel of document.querySelectorAll(".visibilities")) {
+    sel.add(new Option("Public (already on the record)", "public"));
+    sel.add(new Option("Private (internal)", "private"));
+  }
+
+  document.querySelectorAll(".segmented button").forEach((b) => b.addEventListener("click", () => {
+    mode = b.dataset.mode;
+    document.querySelectorAll(".segmented button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+    document.querySelectorAll("[data-for]").forEach((el) => { el.hidden = el.dataset.for !== mode; });
+  }));
+
+  function token() { return $("token").value.trim(); }
+
+  async function api(path, options = {}) {
+    // Signed in to the dashboard, the session is enough; otherwise the token is needed.
+    const headers = { "X-TLE-Client": "web-form", ...(token() ? { Authorization: `Bearer ${token()}` } : {}),
+                      ...(options.headers || {}) };
+    const response = await fetch(path, { ...options, headers });
+    const body = await response.json().catch(() => ({}));
+    if (response.status === 401) $("settings").hidden = false;
+    if (!response.ok) {
+      const detail = Array.isArray(body.detail) ? body.detail.map((d) => d.msg).join("; ") : body.detail;
+      throw new Error(response.status === 401 ? "Sign in to the dashboard, or add the API token." : (detail || response.statusText));
+    }
+    return body;
+  }
+
+  async function loadTaxonomy() {
+    try { taxonomy = await api("/taxonomy"); } catch { taxonomy = null; }
+  }
+  loadTaxonomy();
+
+  function setStatus(id, text, kind = "") {
+    const el = $(id);
+    el.className = !text ? "" : kind === "err" ? "flash err" : "notice";
+    el.style.margin = text ? "16px 0 0" : "";
+    el.textContent = text;
+  }
+  function show(step) {
+    const order = ["add", "review", "done"];
+    for (const id of order) $(`${id}-step`).hidden = id !== step;
+    document.querySelectorAll("#steps li").forEach((li, i) => {
+      const current = i === order.indexOf(step);
+      if (current) li.setAttribute("aria-current", "step"); else li.removeAttribute("aria-current");
+      li.classList.toggle("done", i < order.indexOf(step));
+    });
+    window.scrollTo(0, 0);
+  }
+  const names = (s) => s.split(",").map((x) => x.trim()).filter(Boolean);
+
+  // Step 1 -> preview
+  $("add").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    store.set("tle_authors", $("authors").value);
+    const button = e.submitter; button.disabled = true;
+    setStatus("add-status", mode === "link" ? "Fetching the page and tagging it..." : "Reading and tagging...");
+    try {
+      if (!taxonomy) await loadTaxonomy();
+      if (mode === "file") {
+        if (!$("file").files[0]) throw new Error("Choose a file.");
+        const data = new FormData();
+        data.append("file", $("file").files[0]);
+        data.append("authors", $("authors").value);
+        data.append("note", $("note").value);
+        for (const k of ["source_type", "visibility"]) if ($(k).value) data.append(k, $(k).value);
+        draft = await api("/ingest/preview/file", { method: "POST", body: data });
+      } else {
+        draft = await api("/ingest/preview", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: mode === "text" ? $("text").value : null,
+            url: mode === "link" ? $("url").value : null,
+            authors: names($("authors").value), note: $("note").value,
+            source_type: $("source_type").value || null, visibility: $("visibility").value || null,
+          }),
+        });
+      }
+      fillReview();
+      setStatus("add-status", "");
+      show("review");
+    } catch (err) {
+      setStatus("add-status", `Couldn't read it: ${err.message}`, "err");
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  function toggles(container, options, selected) {
+    container.replaceChildren();
+    for (const name of options) {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = name;
+      b.setAttribute("aria-pressed", selected.includes(name));
+      b.onclick = () => b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true");
+      container.append(b);
+    }
+  }
+  const picked = (container) => [...container.querySelectorAll('button[aria-pressed="true"]')].map((b) => b.textContent);
+
+  function notice(text, warn) {
+    const el = $("author-notice");
+    el.className = text ? (warn ? "notice warn" : "notice") : "";
+    el.style.marginTop = text ? "12px" : "";
+    el.innerHTML = text && warn ? WARN_ICON : "";
+    if (text) el.append(Object.assign(document.createElement("span"), { textContent: text }));
+  }
+
+  function fillReview() {
+    const meta = draft.source_metadata || {};
+    const unknown = meta.author_source === "submitter" && draft.authors.join() === "Unknown";
+    $("r-authors").value = unknown ? "" : draft.authors.join(", ");
+    $("r-date").value = draft.date_created.slice(0, 10);
+    $("r-label").value = meta.label || "";
+    $("r-source_type").value = draft.source_type;
+    $("r-visibility").value = draft.visibility;
+    for (const id of ["r-source_type", "r-visibility"]) $(id).dispatchEvent(new Event("change"));
+    $("r-summary").value = draft.summary;
+    $("r-text").value = draft.extracted_text;
+    toggles($("r-themes"), taxonomy ? taxonomy.themes.map((t) => t.name) : draft.theme_tags, draft.theme_tags);
+    toggles($("r-narratives"), taxonomy ? taxonomy.narratives.map((n) => n.name) : draft.narrative_tags, draft.narrative_tags);
+    $("r-suggested").textContent = meta.suggested_themes ? `The tagger also suggests: ${meta.suggested_themes.join(", ")}` : "";
+
+    if (meta.tagging_error) {
+      notice(`Tagging didn't work (${meta.tagging_error}). Add the summary and tags yourself, or save it untagged.`, true);
+    } else if (unknown) {
+      notice("Couldn't tell who the author is. Please add one.", true);
+    } else if (meta.author_source === "llm") {
+      notice(`Author worked out from the content${meta.author_reason ? `: ${meta.author_reason}` : "."}${meta.author_needs_review ? " Please check it." : ""}`,
+             meta.author_needs_review);
+    } else {
+      notice("");
+    }
+    updateCitation();
+  }
+
+  function citation() {
+    const who = names($("r-authors").value).join(", ").toUpperCase() || "UNKNOWN";
+    const label = $("r-label").value.trim();
+    const where = $("r-source_type").value.toUpperCase() + (label ? ` ${label.toUpperCase()}` : "");
+    const [y, m, d] = ($("r-date").value || new Date().toISOString().slice(0, 10)).split("-");
+    return `${who} - ${where} - ${d}.${m}.${y}`;
+  }
+  function updateCitation() { $("citation").textContent = citation(); }
+  for (const id of ["r-authors", "r-label", "r-source_type", "r-date"]) $(id).addEventListener("input", updateCitation);
+
+  $("back").onclick = () => show("add");
+
+  // Step 2 -> save, with exactly what's on screen (no second tagging call)
+  $("review").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const button = e.submitter; button.disabled = true;
+    setStatus("review-status", "Saving...");
+    const meta = { ...(draft.source_metadata || {}) };
+    for (const k of ["label", "note", "tagging_error"]) delete meta[k];
+    const authors = names($("r-authors").value);
+    if (!authors.length) { setStatus("review-status", "Add an author first.", "err"); button.disabled = false; return; }
+    if (authors.join("|") !== draft.authors.join("|")) {
+      meta.author_source = "provided";
+      delete meta.author_needs_review;
+    }
+    try {
+      const saved = await api("/ingest", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: $("r-text").value, authors, label: $("r-label").value || null,
+          date_created: $("r-date").value ? `${$("r-date").value}T12:00:00Z` : null,
+          source_type: $("r-source_type").value, visibility: $("r-visibility").value,
+          note: (draft.source_metadata || {}).note || "", source_metadata: meta,
+          summary: $("r-summary").value, theme_tags: picked($("r-themes")), narrative_tags: picked($("r-narratives")),
+        }),
+      });
+      $("done-citation").textContent = saved.citation;
+      $("open-item").href = saved.row_id ? `/dashboard/items/${saved.row_id}` : "/dashboard/items";
+      setStatus("review-status", "");
+      show("done");
+    } catch (err) {
+      setStatus("review-status", `Couldn't save: ${err.message}`, "err");
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  $("again").onclick = () => {
+    for (const id of ["text", "url", "note"]) $(id).value = "";
+    $("file").value = ""; draft = null;
+    show("add");
+  };
+</script>
+{% endblock %}

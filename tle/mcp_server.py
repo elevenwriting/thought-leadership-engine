@@ -1,0 +1,170 @@
+"""MCP server for Claude Desktop, Claude Code, Cursor or any MCP client.
+
+The service serves it at /mcp, behind the API token (see api.py), which is how people connect.
+For development it also runs over stdio against whatever database the environment points at:
+
+    tle-mcp
+
+See README for the client config.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+
+from mcp.server.mcpserver import MCPServer
+
+from . import analytics, items, playbooks
+from .config import STATUSES, VISIBILITIES, get_config
+from .ingest import ingest_text
+from .store import SearchQuery, get_store
+
+mcp = MCPServer(
+    "thought-leadership",
+    instructions=(
+        "The company's captured thought leadership: what its people have said in Slack, meetings, "
+        "voice notes, interviews, documents and posts, tagged by theme and narrative. Start with "
+        "get_taxonomy, then get_playbook for the job at hand. Cite every item you use. Items with a "
+        "private_flag are internal: use them to inform content, but don't quote or publish them "
+        "without the author's approval, and tell the user which parts rest on private items."
+    ),
+)
+
+
+@mcp.tool()
+def get_taxonomy() -> dict:
+    """The company's themes, narratives, formats and people (with roles and what they're responsible for)."""
+    config = get_config()
+    return {
+        "company": config.company,
+        "themes": [t.__dict__ for t in config.themes],
+        "narratives": [n.__dict__ for n in config.narratives],
+        "formats": config.formats,
+        "people": [{"name": p.name, "role": p.role, "responsible_for": p.responsible_for} for p in config.people],
+        "playbooks": playbooks.names(),
+    }
+
+
+@mcp.tool()
+def get_playbook(name: str) -> str:
+    """Step-by-step instructions for a job: query, coverage, updates, trends, atomise, aggregate,
+    case-studies, mining, debate, foresight, post-mortems, briefs, media, after-publishing."""
+    return playbooks.get(name)
+
+
+@mcp.tool()
+def search_items(
+    text: str | None = None,
+    themes: list[str] | None = None,
+    narratives: list[str] | None = None,
+    authors: list[str] | None = None,
+    source_types: list[str] | None = None,
+    visibility: str | None = None,
+    status: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    include_text: bool = False,
+    limit: int = 20,
+    offset: int = 0,
+) -> dict:
+    """Find items. List filters match any of the values; filters combine with AND.
+    `text` is a case-insensitive phrase, so keep it short (one to three words).
+    Dates are ISO, e.g. 2026-09-01. Leave visibility empty to get public and private items.
+    Results include summaries and citations; set include_text or call get_item for the full text."""
+    items = get_store().search(SearchQuery(
+        text=text, themes=themes or [], narratives=narratives or [], authors=authors or [],
+        source_types=source_types or [], visibility=visibility, status=status,
+        date_from=datetime.fromisoformat(date_from) if date_from else None,
+        date_to=datetime.fromisoformat(date_to) if date_to else None,
+        limit=min(limit, 100), offset=offset,
+    ))
+    return {"count": len(items), "items": [i.to_result(include_text=include_text, max_text_chars=20_000) for i in items]}
+
+
+@mcp.tool()
+def get_item(row_id: str) -> dict:
+    """One item with its full text, tags, citation and visibility."""
+    item = get_store().get(row_id)
+    if not item:
+        raise ValueError("No item with that ID.")
+    return item.to_result()
+
+
+@mcp.tool()
+def get_coverage(visibility: str | None = None) -> dict:
+    """Theme x narrative grid: how many items each cell has, which formats have been made from them,
+    and the gaps (cells with no material, and cells with material but no content yet)."""
+    return analytics.coverage(get_store(), get_config(), visibility)
+
+
+@mcp.tool()
+def get_trends(days: int = 30) -> dict:
+    """Activity per theme, narrative, author and source type in the last `days` days, against the period before."""
+    return analytics.trends(get_store(), days)
+
+
+@mcp.tool()
+def add_item(
+    text: str,
+    authors: list[str],
+    source_type: str = "braindump",
+    visibility: str | None = None,
+    date_created: str | None = None,
+    label: str | None = None,
+) -> dict:
+    """Save something a person said or wrote. Only use this when the user asks you to save something.
+    source_type: slack, clickup, meeting, document, voicenote, braindump, interview, linkedin, marketing, web, email, other."""
+    item = ingest_text(
+        text, config=get_config(), store=get_store(), source_type=source_type, authors=authors, via="mcp",
+        visibility=visibility, date_created=datetime.fromisoformat(date_created) if date_created else None,
+        source_metadata={"label": label} if label else None,
+    )
+    return item.to_result(include_text=False)
+
+
+@mcp.tool()
+def update_item(
+    row_id: str,
+    status: str | None = None,
+    visibility: str | None = None,
+    theme_tags: list[str] | None = None,
+    narrative_tags: list[str] | None = None,
+) -> dict:
+    """Correct an item's tags, or change its status (new, reviewed, used, archived) or visibility.
+    Only make an item public when the user confirms the author has approved it."""
+    if status and status not in STATUSES:
+        raise ValueError(f"status must be one of {', '.join(STATUSES)}")
+    if visibility and visibility not in VISIBILITIES:
+        raise ValueError("visibility must be public or private")
+    item = items.update(get_store(), get_config(), row_id, {"status": status, "visibility": visibility,
+                        "theme_tags": theme_tags, "narrative_tags": narrative_tags}, via="mcp")
+    if not item:
+        raise ValueError("No item with that ID.")
+    return item.to_result(include_text=False)
+
+
+@mcp.tool()
+def add_deliverable(row_id: str, format: str, title_or_url: str) -> dict:
+    """Record a piece of content made from an item (e.g. format "LinkedIn post"), and mark the item used."""
+    item = items.add_deliverable(get_store(), get_config(), row_id, f"{format}: {title_or_url}", via="mcp")
+    if not item:
+        raise ValueError("No item with that ID.")
+    return item.to_result(include_text=False)
+
+
+def _playbook_prompt(name: str):
+    def prompt() -> str:
+        return playbooks.get(name)
+    return prompt
+
+
+for _name in playbooks.names():
+    mcp.prompt(name=_name, description=f"Run the {_name} playbook")(_playbook_prompt(_name))
+
+
+def main() -> None:
+    mcp.run()
+
+
+if __name__ == "__main__":
+    main()

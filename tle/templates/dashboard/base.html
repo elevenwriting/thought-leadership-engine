@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Dashboard{% endblock %} · Expertise Database</title>
+<script>try { const t = localStorage.getItem("tle-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}</script>
+<link rel="stylesheet" href="/dashboard/theme.css">
+<link rel="stylesheet" href="/dashboard/dashboard.css">
+{# Built only from a checked #RRGGBB colour (branding.accent_css). #}
+{% if accent_css %}<style>{{ accent_css | safe }}</style>{% endif %}
+<script src="/dashboard/select.js" defer></script>
+{% block head %}{% endblock %}
+</head>
+<body>
+<div class="app">
+<header class="top">
+  <div class="top-inner">
+    <a class="product" href="/dashboard"><span class="product-name">Expertise Database</span><span class="product-sub">A Free Eleven Content Project</span></a>
+    {% if user %}
+    <nav class="main" aria-label="Main">
+      {% for key, label, href in [("activity", "Activity", "/dashboard/activity"), ("review", "Needs review", "/dashboard/review"),
+                                  ("items", "Items", "/dashboard/items"), ("people", "People", "/dashboard/people"),
+                                  ("taxonomy", "Taxonomy", "/dashboard/taxonomy"), ("coverage", "Coverage", "/dashboard/coverage"),
+                                  ("settings", "Settings", "/dashboard/settings")] %}
+        <a href="{{ href }}" {% if nav == key or (key == "items" and nav == "item") or (key == "people" and nav == "person") or (key == "settings" and nav == "version") %}aria-current="page"{% endif %}>
+          {{- label }}{% if key == "activity" and unread %} <span class="count">{{ unread }}</span>{% endif %}
+          {%- if key == "review" and review_count %} <span class="count quiet">{{ review_count }}</span>{% endif %}</a>
+      {% endfor %}
+    </nav>
+    {% else %}
+    <span style="flex: 1"></span>
+    {% endif %}
+    <div class="top-end">
+      {% if user %}
+      {% if nav != "add" %}<a class="button primary sm" href="/ingest">{{ icon("plus") }}Add</a>{% endif %}
+      <details class="menu user-menu">
+        <summary class="avatar" aria-label="{{ user.name or user.email }}: account">{{ user | initials }}</summary>
+        <div class="menu-panel">
+          <div class="small" style="color: var(--ink); font-weight: 600">{{ user.name or user.email }}</div>
+          {% if user.name %}<div class="xs faint">{{ user.email }}</div>{% endif %}
+          {% if user.method == "dev" %}<div class="xs faint">TLE_DEV_USER, for development</div>
+          {% else %}<a class="linkish small" style="display: inline-block; margin-top: 12px" href="/dashboard/logout">Sign out</a>{% endif %}
+        </div>
+      </details>
+      <span class="divider" aria-hidden="true"></span>
+      {% endif %}
+      <button type="button" class="theme-toggle" aria-label="Switch between light and dark mode" title="Light or dark mode">
+        <span class="when-light">{{ icon("moon") }}</span><span class="when-dark">{{ icon("sun") }}</span></button>
+      <span class="logo-chip"><img class="logo" src="/dashboard/logo-light.svg?v={{ logo_version }}" alt="{{ company }}"></span>
+    </div>
+  </div>
+</header>
+{% block body %}
+<main class="{% block main_class %}{% endblock %}">
+  {% if message %}<div class="flash" role="status">{{ icon("tick") }}<span>{{ message }}</span></div>{% endif %}
+  {% if error %}<div class="flash err" role="alert">{{ icon("alert") }}<span>{{ error }}</span></div>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+{% endblock %}
+<footer class="site-footer">
+  <div class="site-footer-inner">
+    <span>{{ company }} · Expertise Database</span>
+    <span class="credit">Crafted with expertise by <a href="https://11content.com">Eleven Content</a></span>
+  </div>
+  <div class="footer-bar"></div>
+</footer>
+</div>
+<script>
+  // Light or dark: the switch in the header overrides the operating system's, and is remembered.
+  document.querySelector(".theme-toggle")?.addEventListener("click", () => {
+    const root = document.documentElement;
+    const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    root.dataset.theme = dark ? "light" : "dark";
+    try { localStorage.setItem("tle-theme", root.dataset.theme); } catch {}
+  });
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

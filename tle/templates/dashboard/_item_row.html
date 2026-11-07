@@ -1,0 +1,17 @@
+<tr>
+  {% if "date" in columns %}<td class="small nowrap">{{ item.date_created | date }}</td>{% endif %}
+  <td>
+    <a class="item-title" href="/dashboard/items/{{ item.row_id }}">{{ item.source_metadata.get("label") or item.source_metadata.get("subject") or item.source_type }}</a>
+    <div class="item-meta">{{ item.source_type | capitalize if meta == "source" else item.authors | join(", ") }}</div>
+    {% if item.summary %}<div class="item-summary">{{ item.summary | truncate(180) }}</div>{% elif not compact %}<div class="item-summary faint">No summary yet.</div>{% endif %}
+    {% if item.flags %}<div class="chips" style="margin-top: 8px">{% for f in item.flags %}<span class="chip flag{{ ' error' if f == 'tagging_failed' }}">{{ f | flag }}</span>{% endfor %}</div>{% endif %}
+  </td>
+  {% if "source" in columns %}<td class="small">{{ item.source_type | capitalize }}</td>{% endif %}
+  {% if "themes" in columns %}<td>{% if item.theme_tags %}<div class="chips">{% for t in item.theme_tags %}<span class="chip theme">{{ t }}</span>{% endfor %}</div>{% else %}<span class="small faint">None</span>{% endif %}</td>{% endif %}
+  {% if "narratives" in columns %}<td>{% if item.narrative_tags %}<div class="chips">{% for n in item.narrative_tags %}<span class="chip narrative">{{ n }}</span>{% endfor %}</div>{% else %}<span class="small faint">None</span>{% endif %}</td>{% endif %}
+  {% if "people" in columns %}<td class="small">{{ item.authors | join(", ") }}</td>{% endif %}
+  {% if "visibility" in columns %}<td>{% if item.visibility == "private" %}<span class="chip private">{{ icon("lock") }}Private</span>{% else %}<span class="small">Public</span>{% endif %}</td>{% endif %}
+  {% if "status" in columns %}<td><span class="status {{ item.status if item.status != 'reviewed' }}">{{ item.status | capitalize }}</span></td>{% endif %}
+  {% if "made" in columns %}<td class="num{{ ' faint' if not item.deliverables }}">{{ item.deliverables | length }}</td>{% endif %}
+  {% if "saved" in columns %}<td class="small nowrap">{{ item.date_ingested | date }}</td>{% endif %}
+</tr>

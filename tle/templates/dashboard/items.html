@@ -1,0 +1,80 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Items{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Items</h1>
+    <p class="lead">Everything captured. Filter, then open an item to edit it.</p>
+  </div>
+</div>
+
+{% set labels = {"theme": "Theme", "narrative": "Narrative", "author": "Person", "person": "Person", "source": "Source",
+                 "visibility": "Visibility", "status": "Status", "flag": "Needs", "from": "From", "to": "To"} %}
+<form method="get" class="filters">
+  {% for c in columns %}<input type="hidden" name="cols" value="{{ c }}">{% endfor %}
+  <div class="search">
+    <label for="q">Search</label>
+    <div class="input-icon">{{ icon("search") }}<input id="q" name="q" value="{{ params.get('q', '') }}" placeholder="Words in the text or summary"></div>
+  </div>
+  <div><label for="f-theme">Theme</label><select id="f-theme" name="theme" multiple><option value="">Any</option>
+    {% for t in config.themes %}<option {% if t.name in picked.get('theme', []) %}selected{% endif %}>{{ t.name }}</option>{% endfor %}</select></div>
+  <div><label for="f-narr">Narrative</label><select id="f-narr" name="narrative" multiple><option value="">Any</option>
+    {% for n in config.narratives %}<option {% if n.name in picked.get('narrative', []) %}selected{% endif %}>{{ n.name }}</option>{% endfor %}</select></div>
+  <div><label for="f-person">Person</label><select id="f-person" name="author" multiple><option value="">Anyone</option>
+    {% for p in people %}<option {% if p.name in picked.get('author', []) %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></div>
+  <div><label for="f-source">Source</label><select id="f-source" name="source" multiple><option value="">Any</option>
+    {% for t in source_types %}<option value="{{ t }}" {% if t in picked.get('source', []) %}selected{% endif %}>{{ t | capitalize }}</option>{% endfor %}</select></div>
+  <div><label for="f-vis">Visibility</label><select id="f-vis" name="visibility" multiple><option value="">Both</option>
+    {% for v in ["public", "private"] %}<option value="{{ v }}" {% if v in picked.get('visibility', []) %}selected{% endif %}>{{ v | capitalize }}</option>{% endfor %}</select></div>
+  <div><label for="f-status">Status</label><select id="f-status" name="status" multiple><option value="">Any</option>
+    {% for s in statuses %}<option value="{{ s }}" {% if s in picked.get('status', []) %}selected{% endif %}>{{ s | capitalize }}</option>{% endfor %}</select></div>
+  <div><label for="f-flag">Needs</label><select id="f-flag" name="flag" multiple><option value="">Anything</option>
+    {% for key, label in flags.items() %}<option value="{{ key }}" {% if key in picked.get('flag', []) %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <div><label for="f-from">From</label><input id="f-from" type="date" name="from" value="{{ params.get('from', '') }}"></div>
+  <div><label for="f-to">To</label><input id="f-to" type="date" name="to" value="{{ params.get('to', '') }}"></div>
+  <div class="filters-foot">
+    <span class="small muted">{% if picked %}{% for k, vs in picked.items() %}{% if k == "q" %}Searching for “{{ vs[0] }}”{% else %}{{ labels.get(k, k) }}: {% for v in vs %}{{ flags.get(v, v) if k == "flag" else v }}{{ " or " if not loop.last }}{% endfor %}{% endif %}{{ " · " if not loop.last }}{% endfor %}{% else %}Showing everything{% endif %}</span>
+    <div style="display: flex; gap: 12px; align-items: center">
+      {% if filters %}<a class="small" href="/dashboard/items?{% for c in columns %}cols={{ c }}{{ '&' if not loop.last }}{% endfor %}">Clear</a>{% endif %}
+      <button class="primary">Filter</button>
+    </div>
+  </div>
+</form>
+
+<div class="toolbar">
+  <span class="small muted"><strong style="color: var(--ink)">{{ items | length }}{{ "+" if more }} item{{ "s" if items | length != 1 }}</strong>{% if page > 1 %} on page {{ page }}{% endif %} · newest first</span>
+  <details class="menu">
+    <summary class="button sm">{{ icon("columns") }}Columns</summary>
+    <form method="get" class="menu-panel">
+      {% for k, v in filters %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      <div class="xs faint" style="margin-bottom: 4px">Show these columns</div>
+      {% for key, label in all_columns.items() %}
+        <label class="check"><input type="checkbox" name="cols" value="{{ key }}" {% if key in columns %}checked{% endif %}> {{ label }}</label>
+      {% endfor %}
+      <div class="actions" style="margin-top: 8px"><button class="sm primary">Apply</button></div>
+    </form>
+  </details>
+</div>
+
+{% if items %}
+<div class="table-wrap"><table>
+  <thead><tr>
+    {% if "date" in columns %}<th>Date</th>{% endif %}
+    <th style="min-width: 320px">Item</th>
+    {% for key in ["source", "themes", "narratives", "people", "visibility", "status"] if key in columns %}<th>{{ all_columns[key] }}</th>{% endfor %}
+    {% if "made" in columns %}<th class="num">Made</th>{% endif %}
+    {% if "saved" in columns %}<th>Saved</th>{% endif %}
+  </tr></thead>
+  <tbody>{% for item in items %}{% include "dashboard/_item_row.html" %}{% endfor %}</tbody>
+</table></div>
+<div class="pager">
+  <span>Page {{ page }}</span>
+  <div style="display: flex; gap: 8px">
+    {% if page > 1 %}<a class="button sm" href="?{{ query_string }}&page={{ page - 1 }}">Previous</a>{% endif %}
+    {% if more %}<a class="button sm" href="?{{ query_string }}&page={{ page + 1 }}">Next</a>{% endif %}
+  </div>
+</div>
+{% else %}
+<div class="empty">No items match.</div>
+{% endif %}
+{% endblock %}

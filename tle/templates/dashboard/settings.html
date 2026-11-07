@@ -1,0 +1,325 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Settings{% endblock %}
+
+{% block main_class %}narrow{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Settings</h1>
+    <p class="lead">{% if not settings_version %}These are the built-in settings until the first save.{% endif %}
+      Themes and narratives are on <a href="/dashboard/taxonomy" style="text-decoration: underline">Taxonomy</a>, people on <a href="/dashboard/people" style="text-decoration: underline">People</a>.
+      Keys and tokens are secrets in Google Cloud, not settings.</p>
+  </div>
+</div>
+
+<form method="post" action="/dashboard/settings" enctype="multipart/form-data">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {# Pressing Enter in a field saves the whole page, not the first channel's Save button. #}
+  <button class="sr-only" tabindex="-1" aria-hidden="true">Save settings</button>
+  <div class="panel">
+    <h2>Company</h2>
+    <label for="company" style="margin-top: 0">Name <span class="hint">shown in the header, footer and tagging instructions</span></label>
+    <input id="company" name="company" value="{{ current.get('company', '') }}">
+  </div>
+
+  <div class="panel" id="section-branding">
+    <h2>Branding</h2>
+    <p class="small muted" style="margin-top: -6px">Your logo in the header and your colour on buttons, links and highlights. The Expertise Database name and the Eleven Content credit stay as they are.</p>
+    <label for="logo">Logo <span class="hint">SVG, PNG or JPEG, up to 200 KB. It sits on a white background in light and dark mode.</span></label>
+    <div class="logo-row">
+      <span class="logo-chip"><img class="logo" src="/dashboard/logo-light.svg?v={{ logo_version }}" alt=""></span>
+      <input type="file" id="logo" name="logo" accept=".svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg">
+    </div>
+    {% if current.get("branding", {}).get("logo") %}<label class="check"><input type="checkbox" name="logo_reset"> Go back to the default logo</label>{% endif %}
+
+    {% set accent = current.get("branding", {}).get("accent") %}
+    <label for="accent">Accent colour</label>
+    <div class="accent-row">
+      <input type="color" id="accent" name="accent" value="{{ accent or default_accent }}">
+      <span class="button primary sm accent-sample" aria-hidden="true">Sample button</span>
+    </div>
+  </div>
+
+  <div class="panel" id="section-models">
+    <h2>Models</h2>
+    <p class="small muted" style="margin-top: -6px">Which AI reads and tags what comes in. Each provider's key is a secret, set when the engine was deployed.</p>
+    <div class="grid2">
+      <div><label for="llm_provider">Tagging and authors</label>
+        <select id="llm_provider" name="llm_provider">{% for p, name in [("anthropic", "Anthropic (Claude)"), ("openai", "OpenAI"), ("gemini", "Google Gemini")] %}<option value="{{ p }}" {% if models.llm.provider == p %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
+      <div><label for="llm_model">Model</label>
+        <input id="llm_model" name="llm_model" value="{{ models.llm.model }}" class="mono"></div>
+    </div>
+    {% if not models.llm.key %}<p class="field-note" style="color: var(--err)">{{ models.llm.env }} isn't set, so nothing can be tagged. Add it as a secret.</p>{% endif %}
+    <div class="grid2">
+      <div><label for="transcription_provider">Audio <span class="hint">voice notes and recordings</span></label>
+        <select id="transcription_provider" name="transcription_provider">{% for p, name in [("", "Off"), ("openai", "OpenAI"), ("gemini", "Google Gemini")] %}<option value="{{ p }}" {% if models.transcription.provider == p %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
+      <div><label for="transcription_model">Model</label>
+        <input id="transcription_model" name="transcription_model" value="{{ models.transcription.model }}" class="mono" placeholder="e.g. gpt-4o-transcribe"></div>
+    </div>
+    {% if models.transcription.provider and not models.transcription.key %}<p class="field-note" style="color: var(--err)">{{ models.transcription.env }} isn't set, so audio can't be read. Add it as a secret.</p>{% endif %}
+  </div>
+
+  <div class="panel">
+    <h2>Tagging instructions</h2>
+    <p class="small muted" style="margin-top: -6px">What the tagger is told before each item. {company} becomes the company name. The themes, narratives and people are always added after this. Leave it empty to use the built-in instructions.</p>
+    <textarea name="prompt" class="code tall" placeholder="{{ default_prompt }}" aria-label="Tagging instructions">{{ current.get("prompts", {}).get("tagging", "") }}</textarea>
+    <details class="small" style="margin-top: 12px"><summary class="muted">The built-in instructions</summary>
+      <pre class="code" style="white-space: pre-wrap; background: var(--surface-2); padding: 12px 14px; border-radius: var(--radius-card); margin: 10px 0 0">{{ default_prompt }}</pre></details>
+  </div>
+
+  <div class="panel">
+    <h2>Default visibility</h2>
+    <p class="small muted" style="margin-top: -6px">Visibility ensures proper governance information for citations and quotes.</p>
+    <div class="vis-rows" role="table" aria-label="Default visibility by source">
+      <div class="vis-row vis-head" role="row"><span role="columnheader">Source</span><span role="columnheader">Public</span><span role="columnheader">Private</span></div>
+    {% for t in source_types %}{% set v = visibility_defaults.get(t, "private") %}
+      <div class="vis-row" role="row">
+        <span role="rowheader" id="vis-{{ t }}">{{ t | capitalize }}</span>
+        {% for opt in ["public", "private"] %}<span role="cell"><input type="radio" name="visibility_{{ t }}" value="{{ opt }}" {% if v == opt %}checked{% endif %} aria-labelledby="vis-{{ t }} vis-{{ opt }}"></span>{% endfor %}
+      </div>
+    {% endfor %}
+    </div>
+    <span hidden id="vis-public">Public</span><span hidden id="vis-private">Private</span>
+  </div>
+
+  {% macro control(prefix, f, value, current="") %}{% set name = prefix ~ "__" ~ f.name %}
+  <div class="field{{ ' wide' if f.kind in ('choice', 'list', 'bool', 'pick') }}{{ ' pair' if f.kind in ('select', 'multi', 'emoji') }}"{% if f.show_if %} data-show-if="{{ prefix }}__{{ f.show_if[0] }}={{ f.show_if[1] }}"{% endif %}>
+    {% if f.kind == "bool" %}
+      <label class="switch"><input type="checkbox" name="{{ name }}" value="{{ f.on_value }}" {% if value == f.on %}checked{% endif %}><span class="track" aria-hidden="true"></span>
+        <span><strong>{{ f.label | replace("{model}", reader_model) }}</strong>{% if f.hint %}<span class="hint">{{ f.hint }}</span>{% endif %}</span></label>
+    {% elif f.kind == "pick" %}{% set options = pick.get(f.source) %}
+      {% set search = {"slack": "Search for a channel. Bot must be invited to private channels first.",
+                       "drive": "Search for a folder. Share it with the service account first.",
+                       "clickup_places": "Search for a space, folder or list. Each includes everything inside it.",
+                       "clickup_channels": "Search for a channel."} %}
+      <label for="{{ name }}">{{ f.label }}</label>
+      {% if options is not none %}
+      <select id="{{ name }}" name="{{ name }}" data-search="{{ search[f.source] }}"><option value="">Pick one</option>
+        {% for o in options %}{% set label = ("#" ~ o.name) if f.source in ("slack", "clickup_channels") else o.name %}
+        <option value="{{ o.id }}" data-label="{{ label }}" {% if o.id == value %}selected{% endif %}>{{ label }}{% if o.private %} · private{% elif f.source == "slack" and not o.member %} · Bot will join channel{% endif %}</option>{% endfor %}
+        {% if value and value not in options | map(attribute="id") | list %}<option value="{{ value }}" data-label="{{ current or value }}" selected>{{ current or value }} · can't see it now</option>{% endif %}
+      </select>
+      {% else %}
+      <input id="{{ name }}" name="{{ name }}" class="mono" value="{{ value or '' }}">
+      {% endif %}
+    {% elif f.kind == "multi" %}
+      <label for="{{ name }}">{{ f.label }}{% if f.hint %} <span class="hint">{{ f.hint }}</span>{% endif %}</label>
+      <select id="{{ name }}" name="{{ name }}" multiple><option value="">Pick one or more</option>{% for val, text in f.options %}<option value="{{ val }}" {% if val in (value or []) %}selected{% endif %}>{{ text }}</option>{% endfor %}</select>
+    {% elif f.kind == "select" %}
+      <label for="{{ name }}">{{ f.label }}</label>
+      <select id="{{ name }}" name="{{ name }}">{% for val, text in f.options %}<option value="{{ val }}" {% if value == val %}selected{% endif %}>{{ text }}</option>{% endfor %}</select>
+    {% elif f.kind == "emoji" %}
+      <span class="label" id="{{ name }}-label">{{ f.label }}</span>
+      <div class="emoji-field">
+        <input type="hidden" name="{{ name }}" value="{{ value or '' }}">
+        <button type="button" class="emoji-btn" aria-haspopup="true" aria-expanded="false" aria-labelledby="{{ name }}-label {{ name }}-value">
+          <span class="emoji-glyph" aria-hidden="true"></span></button>
+        <span class="emoji-name" id="{{ name }}-value">:{{ value }}:</span>
+      </div>
+    {% elif f.kind == "choice" %}
+      <fieldset><legend>{{ f.label }}{% if f.hint %} <span class="hint">{{ f.hint }}</span>{% endif %}</legend>
+        <div class="choices">{% for val, text in f.options %}<label class="choice"><input type="radio" name="{{ name }}" value="{{ val }}" {% if value == val %}checked{% endif %}><span>{{ text }}</span></label>{% endfor %}</div>
+      </fieldset>
+    {% else %}
+      <label for="{{ name }}">{{ f.label }}{% if f.hint %} <span class="hint">{{ f.hint }}</span>{% endif %}</label>
+      <input id="{{ name }}" name="{{ name }}" {% if f.kind == "number" %}type="number" min="0" step="any"{% endif %}{% if f.name == "id" %} class="mono"{% endif %}
+        value="{{ value | join(', ') if f.kind == 'list' else (value if value is not none else '') }}">
+    {% endif %}
+  </div>
+  {% endmacro %}
+
+  {% macro row_pane(section, spec, i, row) %}
+  <div class="row-pane" data-row="{{ i }}" hidden>
+    {% set prefix = section.key ~ "__" ~ spec.noun ~ "__" ~ i %}
+    <div class="fields">
+      {% for f in spec.fields if f.kind in ("text", "pick") %}{{ control(prefix, f, row.get(f.path, f.default), row.get("name")) }}{% endfor %}
+      <div class="field-row">{% for f in spec.fields if f.kind in ("select", "multi", "emoji") %}{{ control(prefix, f, row.get(f.path, f.default)) }}{% endfor %}</div>
+      {% for f in spec.fields if f.kind not in ("text", "pick", "select", "multi", "emoji") %}{{ control(prefix, f, row.get(f.path, f.default)) }}{% endfor %}
+    </div>
+    <div class="row-actions">
+      <button class="primary sm save-row" name="focus" value="{{ section.key }}|{{ spec.key }}">Save this {{ spec.noun }}</button>
+      <button type="button" class="sm remove-row">Remove this {{ spec.noun }}</button>
+    </div>
+  </div>
+  {% endmacro %}
+
+  {% for section in sections %}{% set vals = values[section.key] %}
+  {% set blocked = access_errors.get(section.key) %}
+  <div class="panel source-panel" id="section-{{ section.key }}"{% if blocked and blocked[0] == "loading" %} data-loading{% endif %}>
+    {# A section that can't be reached isn't sent, so saving leaves its settings as they are. #}
+    {% if not blocked %}<input type="hidden" name="sections" value="{{ section.key }}">{% endif %}
+    <h2>{{ section.title }}</h2>
+    {% if saved_section == section.key %}<div class="flash access-error" role="status">{{ icon("tick") }}<span>{{ saved_message }}</span></div>{% endif %}
+    {% if blocked %}<div class="flash access-error{{ ' err' if blocked[0] == 'error' }}" role="{{ 'alert' if blocked[0] == 'error' else 'status' }}">{{ icon("alert" if blocked[0] == "error" else "refresh") }}<span>{{ blocked[1] }}</span></div>{% endif %}
+    <fieldset class="section-body"{% if blocked %} disabled{% endif %}>
+    <p class="small muted" style="margin-top: -6px">{{ section.lead }}</p>
+    {% for spec in section.rows %}{% set rows = vals.rows[spec.key] %}
+    {% if spec.title %}<h3 class="rows-title">{{ spec.title }}</h3>{% endif %}
+    <div class="rows" data-key="{{ spec.key }}" data-next="{{ rows | length }}" data-noun="{{ spec.noun }}" data-prefix="{{ spec.name_prefix }}">
+      <div class="row-list">
+        <ul role="list">{% for r in rows %}<li><button type="button" class="row-tab" data-row="{{ loop.index0 }}">{{ (spec.name_prefix ~ r.name) if r.name else r.id }}</button></li>{% endfor %}</ul>
+        <p class="small muted row-empty"{% if rows %} hidden{% endif %}>{{ spec.empty }}</p>
+        <button type="button" class="sm add-row">{{ icon("plus") }}Add a {{ spec.noun }}</button>
+      </div>
+      <div class="row-detail">
+        {% for r in rows %}{{ row_pane(section, spec, loop.index0, r) }}{% endfor %}
+        <p class="small muted row-none">Pick a {{ spec.noun }} to see its rules.</p>
+        <template>{{ row_pane(section, spec, "__n__", {}) }}</template>
+      </div>
+    </div>
+    {% endfor %}
+    {% if section.fields %}<div class="fields">
+      {% for f in section.fields %}{{ control(section.key, f, vals[f.name]) }}{% endfor %}
+    </div>{% endif %}
+    </fieldset>
+  </div>
+  {% endfor %}
+
+  <div class="save-bar" role="region" aria-label="Save">
+    <span class="save-state" aria-live="polite">No unsaved changes</span>
+    <button class="primary">Save settings</button>
+  </div>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script>window.TLE_EMOJI = {{ emoji | tojson }};</script>
+<script src="/dashboard/emoji.js"></script>
+<script>
+(() => {
+  const form = document.querySelector("form[action='/dashboard/settings']");
+  function showIf() {
+    for (const el of form.querySelectorAll("[data-show-if]")) {
+      const [name, value] = el.dataset.showIf.split("=");
+      const input = form.querySelector(`[name="${name}"]`);
+      const on = input && input.tagName === "SELECT" ? input : form.querySelector(`[name="${name}"]:checked`);
+      el.hidden = (on ? on.value : "") !== value;
+    }
+  }
+  form.addEventListener("change", showIf);
+  showIf();
+
+  // The bar at the bottom says when there's something to save, and leaving asks first.
+  const bar = form.querySelector(".save-bar"), state = bar.querySelector(".save-state");
+  let dirty = false;
+  const changed = (e) => {
+    if (dirty || e.target.closest?.(".ms-search, .emoji-pop")) return;
+    dirty = true;
+    bar.classList.add("dirty");
+    state.textContent = "You have unsaved changes";
+  };
+  form.addEventListener("input", changed);
+  form.addEventListener("change", changed);
+  form.addEventListener("submit", () => { dirty = false; });
+  window.addEventListener("beforeunload", (e) => { if (dirty) e.preventDefault(); });
+
+  // Switching provider switches the model to that provider's, unless one of your own was typed.
+  const defaults = {{ model_defaults | tojson }}, audioDefaults = {{ audio_defaults | tojson }};
+  for (const [select, input, names] of [["llm_provider", "llm_model", defaults], ["transcription_provider", "transcription_model", audioDefaults]]) {
+    const field = document.getElementById(input);
+    document.getElementById(select).addEventListener("change", (e) => {
+      if (!field.value || Object.values(names).includes(field.value)) field.value = names[e.target.value] || "";
+    });
+  }
+
+  // Picking a colour previews it on the page.
+  const accent = document.getElementById("accent");
+  accent.addEventListener("input", () => {
+    for (const name of ["--accent", "--focus", "--link-hover"]) document.documentElement.style.setProperty(name, accent.value);
+  });
+
+  function setUpRows(rows) {
+    const list = rows.querySelector("ul");
+    const noun = rows.dataset.noun;
+    const pick = (n) => {
+      rows.querySelectorAll(".row-pane").forEach((p) => { p.hidden = p.dataset.row !== String(n); });
+      rows.querySelectorAll(".row-tab").forEach((t) => t.setAttribute("aria-current", t.dataset.row === String(n)));
+      rows.querySelector(".row-none").hidden = n !== null;
+    };
+    const label = (pane) => {
+      const id = pane.querySelector("[name$='__id']");
+      const text = id.tagName === "SELECT" ? id.selectedOptions[0]?.dataset.label : id.value.trim();
+      return text || `New ${noun}`;
+    };
+    const empty = () => { rows.querySelector(".row-empty").hidden = !!list.children.length; };
+    rows.addEventListener("click", (e) => {
+      const tab = e.target.closest(".row-tab");
+      if (tab) pick(tab.dataset.row);
+      if (e.target.closest(".remove-row")) {
+        const n = e.target.closest(".row-pane").dataset.row;
+        rows.querySelector(`.row-pane[data-row="${n}"]`).remove();
+        list.querySelector(`[data-row="${n}"]`).parentElement.remove();
+        const first = list.querySelector(".row-tab");
+        pick(first ? first.dataset.row : null);
+        empty();
+        // Removing saves straight away, like saving one does.
+        const done = document.createElement("input");
+        Object.assign(done, { type: "hidden", name: "focus", value: `${rows.closest(".source-panel").id.replace("section-", "")}|${rows.dataset.key}|` });
+        form.append(done);
+        form.requestSubmit();
+      }
+      if (e.target.closest(".add-row")) {
+        const n = rows.dataset.next++;
+        const template = rows.querySelector("template");
+        template.insertAdjacentHTML("beforebegin", template.innerHTML.replaceAll("__n__", n));
+        list.insertAdjacentHTML("beforeend", `<li><button type="button" class="row-tab" data-row="${n}">New ${noun}</button></li>`);
+        const pane = rows.querySelector(`.row-pane[data-row="${n}"]`);
+        pane.querySelectorAll("select").forEach((s) => window.tleSelect?.(s));
+        window.tleEmoji?.(pane);
+        empty();
+        pick(n);
+        showIf();
+        pane.querySelector(".ms-trigger, input:not([type=hidden])")?.focus();
+      }
+    });
+    const relabel = (e) => {
+      const pane = e.target.closest(".row-pane");
+      if (pane && /__id$/.test(e.target.name)) list.querySelector(`[data-row="${pane.dataset.row}"]`).textContent = label(pane);
+    };
+    rows.addEventListener("input", relabel);
+    rows.addEventListener("change", relabel);
+    rows.pick = pick;
+    const first = list.querySelector(".row-tab");
+    pick(first ? first.dataset.row : null);
+  }
+  form.querySelectorAll(".rows").forEach(setUpRows);
+
+  // Saving one channel, folder or place saves the page and comes back to it.
+  form.addEventListener("click", (e) => {
+    const save = e.target.closest(".save-row");
+    if (save) save.value = `${save.value.split("|").slice(0, 2).join("|")}|${save.closest(".row-pane").querySelector("[name$='__id']").value}`;
+  });
+  const focus = new URLSearchParams(location.search).get("focus");
+  if (focus) {
+    const [section, key, id] = focus.split("|");
+    const rows = form.querySelector(`#section-${section} .rows[data-key="${key}"]`);
+    const pane = rows && [...rows.querySelectorAll(".row-pane")].find((p) => p.querySelector("[name$='__id']")?.value === id);
+    if (pane) rows.pick(pane.dataset.row);
+    document.getElementById(`section-${section}`)?.scrollIntoView({ block: "start" });
+    history.replaceState(null, "", location.pathname);
+  }
+
+  // A section still loading its list from Slack, Drive or ClickUp is swapped in once it's there.
+  let tries = 0;
+  async function checkLoading() {
+    const waiting = form.querySelectorAll(".source-panel[data-loading]");
+    if (!waiting.length || tries++ > 40) return;
+    try {
+      const page = new DOMParser().parseFromString(await (await fetch(location.pathname)).text(), "text/html");
+      for (const old of waiting) {
+        const fresh = page.getElementById(old.id);
+        if (!fresh || fresh.hasAttribute("data-loading")) continue;
+        old.replaceWith(fresh);
+        fresh.querySelectorAll("select").forEach((s) => window.tleSelect?.(s));
+        window.tleEmoji?.(fresh);
+        fresh.querySelectorAll(".rows").forEach(setUpRows);
+        showIf();
+      }
+    } catch {}
+    setTimeout(checkLoading, 3000);
+  }
+  setTimeout(checkLoading, 3000);
+})();
+</script>
+{% endblock %}
