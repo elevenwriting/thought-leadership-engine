@@ -5,11 +5,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from importlib import resources
 
-from ..models import Event, Item, Person, SettingsVersion
+from ..models import Event, Item, Link, Person, SettingsVersion, Topic, View
 
 UPDATABLE_FIELDS = {
     "status", "deliverables", "theme_tags", "narrative_tags", "visibility", "summary", "authors",
-    "author_ids", "extracted_text", "source_metadata", "date_created", "source_type", "flags",
+    "author_ids", "extracted_text", "source_metadata", "date_created", "source_type", "flags", "reading",
 }
 LIST_COLUMNS = {"theme_tags", "narrative_tags", "authors", "author_ids"}
 
@@ -26,11 +26,16 @@ class SearchQuery:
     flags: list[str] = field(default_factory=list)
     flagged: bool = False  # only items with at least one flag
     source_types: list[str] = field(default_factory=list)
+    vias: list[str] = field(default_factory=list)  # the ways in: slack, clickup, email...
+    # The company's own items (False), reading only (True), or both (None).
+    reading: bool | None = False
     visibility: str | None = None
     status: str | None = None
     statuses: list[str] = field(default_factory=list)  # any of these, alongside status
     date_from: datetime | None = None
     date_to: datetime | None = None
+    ingested_after: datetime | None = None
+    sort: str = "said"  # newest first by when it was said or written ("said"), or when it was saved ("added")
     limit: int = 20
     offset: int = 0
 
@@ -41,6 +46,7 @@ class TagRow:
 
     date_created: datetime
     source_type: str
+    via: str
     visibility: str
     authors: list[str]
     theme_tags: list[str]
@@ -83,7 +89,7 @@ class Store(ABC):
         fields = self.check_fields(fields)
         if not fields:
             return self.get(row_id)
-        if {"source_metadata", "authors"} & set(fields):
+        if {"source_metadata", "authors", "reading"} & set(fields):
             current = self.get(row_id)
             if current is None:
                 return None
@@ -109,7 +115,8 @@ class Store(ABC):
     def find_by_drive_file_id(self, drive_file_id: str) -> Item | None: ...
 
     @abstractmethod
-    def tag_rows(self, since: datetime | None = None) -> list[TagRow]: ...
+    def tag_rows(self, since: datetime | None = None) -> list[TagRow]:
+        """The company's own items that aren't archived; reading is left out."""
 
     @abstractmethod
     def replace_in_lists(self, column: str, old: str, new: str | None) -> int:
@@ -147,6 +154,62 @@ class Store(ABC):
 
     @abstractmethod
     def delete_person(self, person_id: str) -> None: ...
+
+    # --- Topics and links ----------------------------------------------------
+
+    @abstractmethod
+    def save_topics(self, row_id: str, topics: list[Topic]) -> None:
+        """Replaces an item's topics. Links to and from the topics it had are removed."""
+
+    @abstractmethod
+    def save_topic(self, topic: Topic) -> None:
+        """Saves one topic, replacing it if it exists. Its links are kept."""
+
+    @abstractmethod
+    def delete_topic(self, topic_id: str) -> None:
+        """Removes one topic and the links from or to it."""
+
+    @abstractmethod
+    def topics_for(self, row_ids: list[str]) -> list[Topic]:
+        """The topics of these items, in the order they were saved."""
+
+    @abstractmethod
+    def get_topics(self, ids: list[str]) -> list[Topic]: ...
+
+    @abstractmethod
+    def recent_topics(self, place: str, before, limit: int = 20) -> list[Topic]:
+        """A place's latest topics from items created before `before`, newest first."""
+
+    @abstractmethod
+    def add_link(self, link: Link) -> None: ...
+
+    @abstractmethod
+    def links_for(self, ends: list[str]) -> list[Link]:
+        """Links from or to any of these ends ("topic:<id>", "item:<row_id>")."""
+
+    @abstractmethod
+    def delete_link(self, link_id: str) -> None: ...
+
+    @abstractmethod
+    def save_views(self, topic_id: str, views: list[View]) -> None:
+        """Replaces a topic's views."""
+
+    @abstractmethod
+    def views_for(self, row_ids: list[str]) -> list[View]:
+        """The views in these items, in the order they were saved."""
+
+    @abstractmethod
+    def delete_links(self, ends: list[str]) -> None:
+        """Removes every link from or to any of these ends."""
+
+    # --- Sync state ----------------------------------------------------------
+
+    @abstractmethod
+    def get_state(self, key: str) -> dict | None:
+        """Where a scheduled sync got to, e.g. "clickup-sessions:<channel id>"."""
+
+    @abstractmethod
+    def set_state(self, key: str, data: dict) -> None: ...
 
     # --- Settings ------------------------------------------------------------
 

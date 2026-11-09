@@ -12,10 +12,13 @@ sender rules below. The inbox, in Google Workspace, is read by a scheduled job
 - Start the subject with a source type to set it, e.g. "meeting: Q3 all-hands" or
   "voicenote: pricing rant", or add a "Type:" field. Otherwise the body is stored as
   source type "email".
-- Each attachment, and each link in a short email, becomes its own item. A short body
-  (up to 500 characters, not counting links) alongside attachments or links is treated
-  as a note about them: it guides tagging and author detection and is kept in each
-  item's metadata. A longer body is saved as content itself, with its links left inline.
+- Each attachment becomes its own item. A short body (up to 500 characters, not counting
+  links) alongside attachments is treated as a note about them: it guides tagging and author
+  detection and is kept in each item's metadata. A longer body is saved as content itself.
+- Links: when the sender says something about them, what they said is the item and the linked
+  pages are its context (only a page written by one of your People is also saved, as theirs).
+  A link sent with no comment is a deliberate save, like the web form's: the page is saved,
+  credited to whoever wrote it.
 """
 
 from __future__ import annotations
@@ -38,6 +41,7 @@ from ..extract import extract_text, guess_mime
 from ..ingest import ingest_text
 from ..links import URL, default_source_type, find_urls
 from ..links import fetch as fetch_link
+from .shared import has_commentary, link_metadata, read_links, save_pages
 from ..models import Item
 from ..store import Store
 
@@ -129,6 +133,15 @@ def handle_email(email: ParsedEmail, config: Config, store: Store) -> list[Item]
     links = find_urls(body) if sharing else []
     note = body if sharing else ""
     context = f"Subject: {email.subject}\n\n{body}"
+    commentary = bool(links) and has_commentary([body])
+    linked = {}
+    if commentary:
+        place = f"the email \"{email.subject}\" from {email.sender}"
+        found = read_links([(body, email.sender, email.date)], via="email", place=place, row_prefix="email-link",
+                           config=config, store=store)
+        save_pages(found, commentary=True, via="email", place=place, config=config, store=store,
+                   metadata={"subject": email.subject, "message_id": email.message_id})
+        linked, links = link_metadata(found), []
 
     pieces = []  # (text, default source type, extra metadata, context for attribution, page date)
     for filename, data, mime in email.attachments:
@@ -151,8 +164,8 @@ def handle_email(email: ParsedEmail, config: Config, store: Store) -> list[Item]
         pieces.append((page.text, default_source_type(page.final_url),
                        {**page.metadata(), "label": title or page.site or page.title},
                        f"{page.context()}\n\n{context}", page.date))
-    if body and (not (email.attachments or links) or not sharing):
-        pieces.append((body, "email", {"label": title or None}, f"Subject: {email.subject}", None))
+    if body and (commentary or not (email.attachments or links) or not sharing):
+        pieces.append((body, "email", {"label": title or None, **linked}, f"Subject: {email.subject}", None))
 
     items = []
     for text, default_type, extra, piece_context, page_date in pieces:

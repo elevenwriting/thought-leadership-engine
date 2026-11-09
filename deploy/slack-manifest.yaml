@@ -21,6 +21,7 @@ oauth_config:
       - groups:read
       - reactions:read
       - users:read
+      - users:read.email
 settings:
   event_subscriptions:
     request_url: https://YOUR-SERVICE-URL/slack/events

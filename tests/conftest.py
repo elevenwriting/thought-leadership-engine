@@ -47,13 +47,15 @@ def no_real_services(monkeypatch, tmp_path):
 
     get_config.cache_clear()
     get_store.cache_clear()
-    monkeypatch.setattr(dashboard._ready, "done", False)
+    # Never the machine's own Google sign-in.
+    monkeypatch.setattr(dashboard, "_service_account_email", ["tle-runner@test-project.iam.gserviceaccount.com"])
     # Settings' lists start empty and unconnected; tests that need them stand in for them.
     for key, choices in dashboard._choices.items():
         monkeypatch.setattr(choices, "missing", lambda key=key: f"{key} isn't connected in tests.")
         monkeypatch.setattr(choices, "value", None)
         monkeypatch.setattr(choices, "error", "")
-        monkeypatch.setattr(choices, "at", 0.0)
+        monkeypatch.setattr(choices, "busy", False)
+        monkeypatch.setattr(choices, "at", None)
         monkeypatch.setattr(choices, "thread", None)
     yield
     get_config.cache_clear()

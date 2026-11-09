@@ -8,10 +8,64 @@
   </div>
 </div>
 
-{% set labels = {"theme": "Theme", "narrative": "Narrative", "author": "Person", "person": "Person", "source": "Source",
+{# All, then the two views that only light up when something needs attention. #}
+<nav class="views" aria-label="Views">
+  <a href="/dashboard/items" {% if view == "all" %}aria-current="page"{% endif %}>All items</a>
+  <a href="/dashboard/items?view=reading" {% if view == "reading" %}aria-current="page"{% endif %}>Reading{% if reading_total %} <span class="n">{{ reading_total }}</span>{% endif %}</a>
+  <a href="/dashboard/items?view=review" class="review{{ ' on' if review_total }}{{ ' off' if not review_total }}"
+     {% if view == "review" %}aria-current="page"{% endif %}>{{ icon("warn") }}Needs review{% if review_total %} <span class="n">{{ review_total }}</span>{% endif %}</a>
+  <a href="/dashboard/items?view=problems" class="problems{{ ' on' if problem_total }}{{ ' off' if not problem_total }}"
+     {% if view == "problems" %}aria-current="page"{% endif %}>{{ icon("alert") }}Problems{% if problem_total %} <span class="n">{{ problem_total }}</span>{% endif %}</a>
+</nav>
+
+{% if view == "review" %}
+<p class="small muted" style="margin-top: 0">Items the pipeline couldn't finish on its own. Fix them here, or open one for everything.</p>
+<datalist id="people-list">{% for name in people_names %}<option value="{{ name }}">{% endfor %}</datalist>
+{% if flag_counts | length > 1 %}
+<div class="tabs">
+  <a href="/dashboard/items?view=review" {% if not flag %}aria-current="page"{% endif %}>All <span class="n">{{ review_total }}</span></a>
+  {% for key, n in flag_counts.items() %}
+    <a href="/dashboard/items?view=review&flag={{ key }}" {% if flag == key %}aria-current="page"{% endif %}>{{ key | flag }} <span class="n">{{ n }}</span></a>
+  {% endfor %}
+</div>
+{% endif %}
+{% set back = "/dashboard/items?view=review" ~ ("&flag=" ~ flag if flag else "") %}
+{% for item in review_items %}{% include "dashboard/_review_card.html" %}{% else %}
+<div class="empty">Nothing needs review.</div>
+{% endfor %}
+
+{% elif view == "problems" %}
+<p class="small muted" style="margin-top: 0">What couldn't be saved or read: unreadable files, refused links, rejected emails, and Slack, Drive or ClickUp errors. A problem that keeps happening is listed once, with how often.</p>
+{% if problems %}
+<div class="table-wrap"><table>
+  <thead><tr><th>When</th><th>What happened</th><th>From</th><th class="num">
+    <form method="post" action="/dashboard/problems/dismiss"><input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="linkish small">Dismiss all</button></form></th></tr></thead>
+  <tbody>{% for e in problems %}
+  <tr>
+    <td class="small nowrap">{{ (e.last_time or e.time) | date(true) }}</td>
+    <td><div class="msg">{% if e.row_id and e.kind != "item_deleted" %}<a href="/dashboard/items/{{ e.row_id }}">{{ e.message }}</a>{% else %}{{ e.message }}{% endif %}</div>
+      {% if e.count > 1 %}<div class="small faint">{{ e.count }} times, first {{ e.time | date(true) }}.</div>{% endif %}
+      {% if e.details.get("url") %}<div class="small"><a href="{{ e.details['url'] }}" rel="noopener">{{ e.details["url"] | truncate(80) }}</a></div>{% endif %}</td>
+    <td class="small">{{ e.via | capitalize }}</td>
+    <td class="num"><form method="post" action="/dashboard/problems/dismiss"><input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="id" value="{{ e.id }}"><button class="linkish small">Dismiss</button></form></td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<div class="empty">No problems.</div>{% endif %}
+
+{% else %}
+
+{% if view == "reading" %}
+<p class="small muted" style="margin-top: 0">Other people's content that your team shared without saying anything about it. It's kept to read, but it isn't your company's thinking: searches, citations and coverage leave it out. When someone comments on a link, the comment is saved as the item instead.</p>
+{% endif %}
+{% set labels = {"theme": "Theme", "narrative": "Narrative", "author": "Person", "person": "Person", "source": "Source", "type": "Type",
                  "visibility": "Visibility", "status": "Status", "flag": "Needs", "from": "From", "to": "To"} %}
 <form method="get" class="filters">
   {% for c in columns %}<input type="hidden" name="cols" value="{{ c }}">{% endfor %}
+  {% if view == "reading" %}<input type="hidden" name="view" value="reading">{% endif %}
+  {% if sort == "added" %}<input type="hidden" name="sort" value="added">{% endif %}
+  {% if per != 20 %}<input type="hidden" name="per" value="{{ per }}">{% endif %}
   <div class="search">
     <label for="q">Search</label>
     <div class="input-icon">{{ icon("search") }}<input id="q" name="q" value="{{ params.get('q', '') }}" placeholder="Words in the text or summary"></div>
@@ -23,7 +77,9 @@
   <div><label for="f-person">Person</label><select id="f-person" name="author" multiple><option value="">Anyone</option>
     {% for p in people %}<option {% if p.name in picked.get('author', []) %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select></div>
   <div><label for="f-source">Source</label><select id="f-source" name="source" multiple><option value="">Any</option>
-    {% for t in source_types %}<option value="{{ t }}" {% if t in picked.get('source', []) %}selected{% endif %}>{{ t | capitalize }}</option>{% endfor %}</select></div>
+    {% for key, name in sources.items() %}<option value="{{ key }}" {% if key in picked.get('source', []) %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
+  <div><label for="f-type">Type</label><select id="f-type" name="type" multiple><option value="">Any</option>
+    {% for t in source_types %}<option value="{{ t }}" {% if t in picked.get('type', []) %}selected{% endif %}>{{ t | kind }}</option>{% endfor %}</select></div>
   <div><label for="f-vis">Visibility</label><select id="f-vis" name="visibility" multiple><option value="">Both</option>
     {% for v in ["public", "private"] %}<option value="{{ v }}" {% if v in picked.get('visibility', []) %}selected{% endif %}>{{ v | capitalize }}</option>{% endfor %}</select></div>
   <div><label for="f-status">Status</label><select id="f-status" name="status" multiple><option value="">Any</option>
@@ -33,20 +89,33 @@
   <div><label for="f-from">From</label><input id="f-from" type="date" name="from" value="{{ params.get('from', '') }}"></div>
   <div><label for="f-to">To</label><input id="f-to" type="date" name="to" value="{{ params.get('to', '') }}"></div>
   <div class="filters-foot">
-    <span class="small muted">{% if picked %}{% for k, vs in picked.items() %}{% if k == "q" %}Searching for “{{ vs[0] }}”{% else %}{{ labels.get(k, k) }}: {% for v in vs %}{{ flags.get(v, v) if k == "flag" else v }}{{ " or " if not loop.last }}{% endfor %}{% endif %}{{ " · " if not loop.last }}{% endfor %}{% else %}Showing everything{% endif %}</span>
+    <span class="small muted">{% if picked | reject("equalto", "view") | list %}{% for k, vs in picked.items() if k != "view" %}{% if k == "q" %}Searching for “{{ vs[0] }}”{% else %}{{ labels.get(k, k) }}: {% for v in vs %}{{ flags.get(v, v) if k == "flag" else v | via if k == "source" else v | kind if k == "type" else v }}{{ " or " if not loop.last }}{% endfor %}{% endif %}{{ " · " if not loop.last }}{% endfor %}{% else %}Showing everything{% endif %}</span>
     <div style="display: flex; gap: 12px; align-items: center">
-      {% if filters %}<a class="small" href="/dashboard/items?{% for c in columns %}cols={{ c }}{{ '&' if not loop.last }}{% endfor %}">Clear</a>{% endif %}
+      {% if filters | rejectattr(0, "equalto", "view") | list %}<a class="small" href="/dashboard/items?{{ 'view=reading&' if view == 'reading' }}{% for c in columns %}cols={{ c }}{{ '&' if not loop.last }}{% endfor %}">Clear</a>{% endif %}
       <button class="primary">Filter</button>
     </div>
   </div>
 </form>
 
 <div class="toolbar">
-  <span class="small muted"><strong style="color: var(--ink)">{{ items | length }}{{ "+" if more }} item{{ "s" if items | length != 1 }}</strong>{% if page > 1 %} on page {{ page }}{% endif %} · newest first</span>
+  <span class="small muted"><strong style="color: var(--ink)">{{ items | length }}{{ "+" if more }} item{{ "s" if items | length != 1 }}</strong>{% if page > 1 %} on page {{ page }}{% endif %}</span>
+  <span class="sort-switch small" role="group" aria-label="Order">
+    <span class="muted">Newest first by</span>
+    <a href="/dashboard/items?{{ sort_links.said }}"{% if sort != "added" %} aria-current="true"{% endif %}>date said</a>
+    <a href="/dashboard/items?{{ sort_links.added }}"{% if sort == "added" %} aria-current="true"{% endif %}>date added</a>
+  </span>
+  <form method="get" class="per-page">
+    {% for k, v in keep %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    <label for="per" class="small muted">Show</label>
+    <select id="per" name="per" onchange="this.form.submit()">{% for n in page_sizes %}<option value="{{ n }}" {% if n == per %}selected{% endif %}>{{ n }}</option>{% endfor %}</select>
+    <noscript><button class="sm">Show</button></noscript>
+  </form>
   <details class="menu">
     <summary class="button sm">{{ icon("columns") }}Columns</summary>
     <form method="get" class="menu-panel">
       {% for k, v in filters %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      {% if sort == "added" %}<input type="hidden" name="sort" value="added">{% endif %}
+      {% if per != 20 %}<input type="hidden" name="per" value="{{ per }}">{% endif %}
       <div class="xs faint" style="margin-bottom: 4px">Show these columns</div>
       {% for key, label in all_columns.items() %}
         <label class="check"><input type="checkbox" name="cols" value="{{ key }}" {% if key in columns %}checked{% endif %}> {{ label }}</label>
@@ -61,7 +130,7 @@
   <thead><tr>
     {% if "date" in columns %}<th>Date</th>{% endif %}
     <th style="min-width: 320px">Item</th>
-    {% for key in ["source", "themes", "narratives", "people", "visibility", "status"] if key in columns %}<th>{{ all_columns[key] }}</th>{% endfor %}
+    {% for key in ["source", "type", "themes", "narratives", "people", "visibility", "status"] if key in columns %}<th>{{ all_columns[key] }}</th>{% endfor %}
     {% if "made" in columns %}<th class="num">Made</th>{% endif %}
     {% if "saved" in columns %}<th>Saved</th>{% endif %}
   </tr></thead>
@@ -76,5 +145,6 @@
 </div>
 {% else %}
 <div class="empty">No items match.</div>
+{% endif %}
 {% endif %}
 {% endblock %}

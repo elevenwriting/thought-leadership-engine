@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import events
 from .config import DATABASE_KEYS, Config, build_config, get_config
 from .models import Person, SettingsVersion
 
@@ -21,8 +20,6 @@ def save(store, data: dict[str, Any], *, actor: str, note: str = "") -> Settings
     data = {k: data[k] for k in DATABASE_KEYS if k in data}
     validate(data)
     version = store.save_settings(data, saved_by=actor, note=note)
-    events.record(store, "settings_changed", "Settings saved"
-                  + (f": {note}" if note else ""), via="dashboard", actor=actor, version=version.version)
     get_config.cache_clear()
     return version
 
@@ -47,7 +44,4 @@ def prepare(store) -> bool:
 
 def save_person(store, person: Person, *, actor: str, before: Person | None = None) -> None:
     store.save_person(person)
-    verb = "Updated" if before else "Added"
-    events.record(store, "person_changed", f"{verb} person {person.name}", via="dashboard", actor=actor,
-                  person_id=person.id)
     get_config.cache_clear()

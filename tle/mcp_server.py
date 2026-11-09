@@ -14,7 +14,7 @@ from datetime import datetime
 
 from mcp.server.mcpserver import MCPServer
 
-from . import analytics, items, playbooks
+from . import analytics, items, playbooks, topics
 from .config import STATUSES, VISIBILITIES, get_config
 from .ingest import ingest_text
 from .store import SearchQuery, get_store
@@ -26,7 +26,13 @@ mcp = MCPServer(
         "voice notes, interviews, documents and posts, tagged by theme and narrative. Start with "
         "get_taxonomy, then get_playbook for the job at hand. Cite every item you use. Items with a "
         "private_flag are internal: use them to inform content, but don't quote or publish them "
-        "without the author's approval, and tell the user which parts rest on private items."
+        "without the author's approval, and tell the user which parts rest on private items. Items marked "
+        "paraphrased are meeting notes, a summary by a notetaker or an AI: report what they say, but never quote "
+        "them as someone's own words. "
+        "Chat is saved as sessions, each split into topics; when a topic continues work from other "
+        "sessions, get_chain returns the whole thread of it in order. A topic's views are a summary of "
+        "each person's position: use them to find what matters, but quote the messages they point to, "
+        "never the view's own wording."
     ),
 )
 
@@ -59,6 +65,8 @@ def search_items(
     narratives: list[str] | None = None,
     authors: list[str] | None = None,
     source_types: list[str] | None = None,
+    sources: list[str] | None = None,
+    include_reading: bool = False,
     visibility: str | None = None,
     status: str | None = None,
     date_from: str | None = None,
@@ -70,24 +78,44 @@ def search_items(
     """Find items. List filters match any of the values; filters combine with AND.
     `text` is a case-insensitive phrase, so keep it short (one to three words).
     Dates are ISO, e.g. 2026-09-01. Leave visibility empty to get public and private items.
-    Results include summaries and citations; set include_text or call get_item for the full text."""
-    items = get_store().search(SearchQuery(
+    `source_types` are kinds of content (linkedin, meeting, document...); `sources` are the ways in
+    (slack, clickup, email, drive, web, api, mcp). Reading (other people's content the team shared
+    without comment) is left out unless include_reading is set; never cite it as the company's view.
+    Results include summaries and citations; set include_text or call get_item for the full text.
+    Chat sessions also list their topics, with the #numbers of the messages each covers."""
+    store = get_store()
+    items = store.search(SearchQuery(
         text=text, themes=themes or [], narratives=narratives or [], authors=authors or [],
-        source_types=source_types or [], visibility=visibility, status=status,
+        source_types=source_types or [], vias=sources or [], reading=None if include_reading else False,
+        visibility=visibility, status=status,
         date_from=datetime.fromisoformat(date_from) if date_from else None,
         date_to=datetime.fromisoformat(date_to) if date_to else None,
         limit=min(limit, 100), offset=offset,
     ))
-    return {"count": len(items), "items": [i.to_result(include_text=include_text, max_text_chars=20_000) for i in items]}
+    return {"count": len(items),
+            "items": topics.results(items, store, include_text=include_text, max_text_chars=20_000)}
 
 
 @mcp.tool()
 def get_item(row_id: str) -> dict:
-    """One item with its full text, tags, citation and visibility."""
-    item = get_store().get(row_id)
+    """One item with its full text, tags, citation and visibility. A chat session also lists its
+    topics, each with its messages (#numbers in the text), the chain it's on and, where the channel
+    pulls them out, the views people took in it (summaries: quote the messages, not the view)."""
+    store = get_store()
+    item = store.get(row_id)
     if not item:
         raise ValueError("No item with that ID.")
-    return item.to_result()
+    return topics.result(item, store)
+
+
+@mcp.tool()
+def get_chain(topic_id: str) -> dict:
+    """A chat topic and every topic linked to it: the same piece of work or question picked up
+    in other sessions, oldest first, each with its messages and citation."""
+    try:
+        return {"chain": topics.chain_result(topic_id, get_store())}
+    except KeyError:
+        raise ValueError("No topic with that ID.")
 
 
 @mcp.tool()

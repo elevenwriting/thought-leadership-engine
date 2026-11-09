@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date, datetime, timezone
 from typing import Any
 
 from .config import SOURCE_TYPES
@@ -12,7 +13,7 @@ from .config import SOURCE_TYPES
 class Field:
     path: str  # dotted, inside the section: "gmail.inbox"
     label: str
-    kind: str = "text"  # text | number | bool | choice | select | multi | emoji | list | pick
+    kind: str = "text"  # text | number | bool | choice | select | multi | emoji | list | pick | date
     hint: str = ""
     default: Any = None
     options: list[tuple[str, str]] = field(default_factory=list)  # for choice: (value, label)
@@ -20,6 +21,7 @@ class Field:
     on: Any = True  # what a bool stores when switched on, and off
     off: Any = False
     source: str = ""  # for pick: where the choices come from (slack | drive), typed in when that's unavailable
+    inline: bool = False  # a short number drawn like a switch: the box first, its label and hint beside it
 
     @property
     def name(self) -> str:
@@ -89,9 +91,22 @@ CLICKUP_PLACE_FIELDS = [
 CLICKUP_CHANNEL_FIELDS = [
     Field("id", "Channel", "pick", source="clickup_channels"),
     Field("mode", "Save", "select", default="reaction",
-          options=[("all", "Every message"), ("reaction", "Reacted messages and threads")]),
+          options=[("sessions", "Every message, as sessions"), ("reaction", "Reacted messages and threads")]),
     Field("reaction", "Reaction", "emoji", default="round_pushpin", show_if=("mode", "reaction")),
-    Field("include_threads", "Save whole threads", "bool", "The message and every reply as one item", True),
+    Field("from", "Starting from", "date",
+          "Nothing posted before this is saved. An earlier date reads the channel's history, which uses more "
+          "model calls. Changing this or the mode later never re-reads: to start over, remove the channel and add "
+          "it again.", ""),
+    Field("gap_hours", "A session ends after", "number", "hours without a new message", 4,
+          show_if=("mode", "sessions")),
+    Field("views", "Pull out views", "bool",
+          "The main model lists each person's positions in every topic. About 4 times the cost of finding topics.",
+          False, show_if=("mode", "sessions")),
+    Field("include_threads", "Save whole threads", "bool", "The message and every reply as one item", True,
+          show_if=("mode", "reaction")),
+    Field("look_back_days", "Days to keep watching", "number",
+          "New reactions, and new replies that update a session, are picked up for this many days after a message",
+          7, inline=True),
     Field("include_links", "Save shared links", "bool", "Each linked page is read and saved as its own item", True),
     Field("visibility", "Visibility", "select", default="",
           options=[("", "Default for ClickUp"), ("public", "Public"), ("private", "Private")]),
@@ -117,7 +132,6 @@ SECTIONS = [
                   shown=lambda data: _folders_shown(data))]),
     Section("clickup", "ClickUp", "Read on a schedule with the ClickUp API token, so it sees what that user sees. "
             "Authors are worked out from the content, falling back to whoever created it.", [
-        Field("chat_look_back_days", "Check Chat reactions from the last", "number", "days", 7),
     ], [
         Rows("places", "place", CLICKUP_PLACE_FIELDS, "No spaces, folders or lists yet, so no tasks or Docs are saved.",
              title="Tasks and Docs"),
@@ -218,6 +232,11 @@ def _value(f: Field, raw: Any, label: str) -> Any:
         return [v.strip() for v in raw.replace("\n", ",").split(",") if v.strip()]
     if f.kind == "number":
         return _number(raw, label)
+    if f.kind == "date" and raw:
+        try:
+            return date.fromisoformat(raw).isoformat()
+        except ValueError:
+            raise ValueError(f"{label} should be a date.") from None
     return raw or None
 
 
@@ -240,7 +259,7 @@ def read(form: dict, sources: dict, names: dict[str, dict[str, str]] | None = No
             raw = form.get(f"{section.key}__{f.name}", "")
             _set(data, f.path, _value(f, raw, f"{section.title}: {f.label}"))
         for spec in section.rows:
-            before = {r.get("id"): r.get("name") for r in (sources.get(section.key) or {}).get(spec.key) or []}
+            before = {r.get("id"): r for r in (sources.get(section.key) or {}).get(spec.key) or []}
             data[spec.key] = _row_values(form, section, spec, names or {}, before)
         sources[section.key] = {k: v for k, v in data.items() if v != {}}
     return sources
@@ -260,7 +279,12 @@ def _rows(form: dict, prefix: str) -> list[dict[str, Any]]:
 
 def _row_values(form: dict, section: Section, spec: Rows, names: dict[str, dict[str, str]], before: dict) -> list[dict]:
     """A section's rows; ones without an ID are dropped, and an ID given twice keeps the first.
-    Each keeps a name, from Slack or Drive when they answered, otherwise the one it had."""
+    Each keeps a name, from Slack or Drive when they answered, otherwise the one it had, and any
+    keys the form doesn't show (such as `since`).
+
+    Rows with a mode and a Starting from date (ClickUp channels): a new row with no date starts
+    from today and records when it was `added`, and when an existing row's mode changes, `since`
+    records when, so the new mode starts from then rather than re-reading what came before."""
     rows, seen = [], set()
     for row in _rows(form, f"{section.key}__{spec.noun}"):
         row_id = _last(row.get("id", ""))
@@ -272,8 +296,24 @@ def _row_values(form: dict, section: Section, spec: Rows, names: dict[str, dict[
             value = _value(f, row.get(f.name, ""), f"{section.title} {spec.noun} {row_id}: {f.label}")
             if value is not None:
                 values[f.path] = value
-        name = names.get(spec.source, {}).get(row_id) or before.get(row_id)
+        old = before.get(row_id) or {}
+        shown = {f.path for f in spec.fields} | {"id", "name"}
+        values.update({k: v for k, v in old.items() if k not in shown})
+        dated = {f.path for f in spec.fields if f.kind == "date"}
+        if "from" in dated and "mode" in values:
+            if not old:
+                values.setdefault("from", date.today().isoformat())
+                # Its sync starts over from this: a channel removed and added again re-reads its history.
+                values["added"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            elif old.get("mode", "reaction") != values["mode"]:
+                values["since"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        name = names.get(spec.source, {}).get(row_id) or old.get("name")
         if name:
             values = {"id": row_id, "name": name, **{k: v for k, v in values.items() if k != "id"}}
         rows.append(values)
     return rows
+
+
+def form_rows(form: dict, prefix: str) -> list[dict[str, str]]:
+    """Rows named <prefix>__<n>__<field>, in order, with each field's last value as text."""
+    return [{k: _last(v) for k, v in row.items()} for row in _rows(form, prefix)]

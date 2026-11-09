@@ -37,15 +37,19 @@
 
     let pop = null, search = null, list = null, shown = [], active = 0;
 
-    // In a multi-select, an option with an empty value ("Any") is the placeholder, not a choice.
-    const choices = () => [...select.options].filter((o) => !(multi && o.value === ""));
-    const placeholder = () => (multi ? [...select.options].find((o) => o.value === "")?.text : "") || "Any";
+    // The placeholder ("Pick one", or a multi-select's empty "Any") is shown when nothing is
+    // picked, and is never offered as a choice. An empty value in a single select ("Off") is a choice.
+    const isPlaceholder = (o) => o.dataset.placeholder !== undefined || (multi && o.value === "");
+    const choices = () => [...select.options].filter((o) => !isPlaceholder(o));
+    const placeholder = () => [...select.options].find(isPlaceholder)?.text || "Any";
 
     function render() {
       const picked = choices().filter((o) => o.selected && !(o.value === "" && !multi));
-      const text = !picked.length ? (multi ? placeholder() : select.options[select.selectedIndex]?.text || "")
+      const current = select.options[select.selectedIndex];
+      const text = !picked.length ? (multi || !current || isPlaceholder(current) ? placeholder() : current.text)
         : picked.length === 1 ? picked[0].text : `${picked[0].text} +${picked.length - 1}`;
       value.textContent = text;
+      value.classList.toggle("ms-placeholder", !picked.length && (multi || !current || isPlaceholder(current)));
       trigger.classList.toggle("ms-on", picked.length > 0);
     }
 
@@ -169,8 +173,86 @@
     render();
   }
 
+  // A text box with a list of names (<input list>, e.g. Authors): the same menu as the selects,
+  // in place of the browser's own. Names are comma-separated, so it suggests for the one being
+  // typed and picking one fills it in, ready for the next.
+  function suggest(input) {
+    const source = input.list;
+    if (!source || input.dataset.suggest) return;
+    input.dataset.suggest = "1";
+    const names = [...source.options].map((o) => o.value).filter(Boolean);
+    input.removeAttribute("list");
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-autocomplete", "list");
+    input.setAttribute("aria-expanded", "false");
+    input.autocomplete = "off";
+    const wrap = document.createElement("div");
+    wrap.className = "ms ms-suggest";
+    input.replaceWith(wrap);
+    wrap.appendChild(input);
+    let pop = null, list = null, shown = [], active = 0;
+
+    const parts = () => input.value.split(",");
+    const typed = () => parts().at(-1).trim().toLowerCase();
+    const chosen = () => parts().slice(0, -1).map((p) => p.trim().toLowerCase());
+    const close = () => { pop?.remove(); pop = list = null; input.setAttribute("aria-expanded", "false"); };
+    const pick = (name) => {
+      const kept = parts().slice(0, -1).map((p) => p.trim()).filter(Boolean);
+      input.value = [...kept, name].join(", ") + ", ";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      close();
+      input.focus();
+    };
+    const mark = () => list?.querySelectorAll(".ms-opt").forEach((li, i) => {
+      li.classList.toggle("ms-active", i === active);
+      if (i === active) { li.scrollIntoView({ block: "nearest" }); input.setAttribute("aria-activedescendant", li.id); }
+    });
+    const draw = () => {
+      const q = typed(), taken = chosen();
+      shown = names.filter((n) => !taken.includes(n.toLowerCase()) && n.toLowerCase().includes(q) && n.toLowerCase() !== q);
+      if (!shown.length || document.activeElement !== input) return close();
+      if (!pop) {
+        pop = document.createElement("div");
+        pop.className = "ms-pop";
+        list = document.createElement("ul");
+        list.className = "ms-list";
+        list.setAttribute("role", "listbox");
+        list.id = `${input.id || "names"}-suggestions`;
+        input.setAttribute("aria-controls", list.id);
+        pop.appendChild(list);
+        wrap.appendChild(pop);
+        input.setAttribute("aria-expanded", "true");
+      }
+      active = Math.min(active, shown.length - 1);
+      list.replaceChildren(...shown.map((name, i) => {
+        const li = document.createElement("li");
+        li.className = "ms-opt";
+        li.id = `${list.id}-${i}`;
+        li.setAttribute("role", "option");
+        li.textContent = name;
+        li.addEventListener("mousedown", (e) => { e.preventDefault(); pick(name); });
+        return li;
+      }));
+      mark();
+    };
+    input.addEventListener("input", () => { active = 0; draw(); });
+    input.addEventListener("focus", draw);
+    input.addEventListener("blur", () => setTimeout(close, 100));
+    input.addEventListener("keydown", (e) => {
+      if (!pop) { if (e.key === "ArrowDown") { e.preventDefault(); draw(); } return; }
+      if (e.key === "ArrowDown") { e.preventDefault(); active = Math.min(active + 1, shown.length - 1); mark(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); active = Math.max(active - 1, 0); mark(); }
+      else if (e.key === "Enter" || (e.key === "Tab" && typed())) { e.preventDefault(); pick(shown[active]); }
+      else if (e.key === "Escape") { e.preventDefault(); close(); }
+    });
+  }
+
   window.tleSelect = enhance;
-  const all = () => document.querySelectorAll("select").forEach(enhance);
+  window.tleSuggest = suggest;
+  const all = () => {
+    document.querySelectorAll("select").forEach(enhance);
+    document.querySelectorAll("input[list]").forEach(suggest);
+  };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", all);
   else all();
 })();

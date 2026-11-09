@@ -56,7 +56,7 @@ People. Then the check's Config line no longer asks for them.
 ## 4. Connect the ways in
 
 Do the ones the company chose. After each, rerun the check (the command the deploy printed),
-or open Settings, which shows each source in red until it works.
+or open Sources, which shows each source in red until it works.
 
 - **Slack.** **Person:** create the app from `deploy/slack-manifest.yaml` with the request URL
   set to the deploy's "Slack events URL", install it, then in their terminal export
@@ -65,15 +65,15 @@ or open Settings, which shows each source in red until it works.
   Settings; invite the bot to private ones with `/invite`.
 - **Google Drive.** **Person:** share each folder with the service account the deploy printed
   (`tle-runner@<project>.iam.gserviceaccount.com`) as Viewer, then pick it under Google Drive
-  in Settings. If Drive refuses the share, a Workspace admin must allow sharing outside the
+  on Sources. If Drive refuses the share, a Workspace admin must allow sharing outside the
   domain for that address.
 - **ClickUp.** **Person:** create a dedicated ClickUp user, add it to the spaces and Chat
   channels it should read, create its personal API token (`pk_`) and export it as
   `CLICKUP_API_TOKEN`. **Agent:** rerun the deploy. **Person:** pick places and channels under
-  ClickUp in Settings.
+  ClickUp on Sources.
 - **Email inbox.** **Person:** a Workspace admin grants the service account's client ID the
   Gmail scope (the deploy prints both and where to do it), and the inbox address goes under
-  Email in Settings.
+  Email on Sources.
 
 ## 5. Connect Claude
 

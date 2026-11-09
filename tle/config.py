@@ -1,7 +1,7 @@
 """Loads the configuration.
 
 Everything a company sets lives in the database and is edited in the dashboard's Settings:
-the company, people, themes, models, sources, branding. A new installation starts from the
+the company, people, themes, models and sources. A new installation starts from the
 built-in defaults (defaults.py). Settings are re-read every SETTINGS_TTL seconds, so a change
 in the dashboard reaches every running service.
 
@@ -17,6 +17,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from . import secrets  # noqa: F401  (trims the secrets in the environment when imported)
 from .defaults import defaults
 from .models import Person
 
@@ -26,11 +27,21 @@ SOURCE_TYPES = [
     "slack", "clickup", "meeting", "document", "voicenote", "braindump",
     "interview", "linkedin", "marketing", "web", "email", "other",
 ]
+TYPE_LABELS = {
+    "slack": "Slack message", "clickup": "ClickUp message", "meeting": "Meeting", "document": "Document",
+    "voicenote": "Voice note", "braindump": "Braindump", "interview": "Interview", "linkedin": "LinkedIn post",
+    "marketing": "Marketing", "web": "Web page", "email": "Email", "other": "Other",
+}
+# The ways in, as items record them (Item.via).
+SOURCES = {
+    "slack": "Slack", "clickup": "ClickUp", "email": "Email", "drive": "Google Drive", "web": "Web form",
+    "api": "API", "mcp": "Claude (MCP)", "cli": "Command line", "dashboard": "Dashboard",
+}
 VISIBILITIES = ["public", "private"]
 STATUSES = ["new", "reviewed", "used", "archived"]
 # Everything a company sets, saved in the database and edited in the dashboard.
-DATABASE_KEYS = ("company", "llm", "transcription", "extraction", "themes", "narratives", "formats", "prompts",
-                 "sources", "branding")
+DATABASE_KEYS = ("company", "llm", "fast", "transcription", "extraction", "themes", "narratives", "formats", "prompts",
+                 "sources")
 KEY_ENVS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
 SETTINGS_TTL = 30
 
@@ -69,11 +80,16 @@ class Config:
     formats: list[str]
     sources: dict[str, Any]
     prompts: dict[str, str] = field(default_factory=dict)
-    branding: dict[str, Any] = field(default_factory=dict)  # an uploaded logo and accent colour (see branding.py)
     settings_version: int | None = None  # the database version in use; None means the built-in defaults
+    fast: ModelConfig | None = None  # a cheaper model for quick jobs, such as finding a chat session's topics
 
     def default_visibility(self, source_type: str) -> str:
         return self.sources.get("default_visibility", {}).get(source_type, "private")
+
+    @property
+    def quick(self) -> ModelConfig:
+        """The model for quick jobs: `fast` if set, else `llm`."""
+        return self.fast or self.llm
 
     @property
     def reader(self) -> ModelConfig:
@@ -99,6 +115,7 @@ class Config:
         return {
             "company": self.company,
             "llm": model(self.llm, {"max_input_chars": self.max_input_chars}),
+            "fast": model(self.fast),
             "transcription": model(self.transcription),
             "extraction": model(self.extraction),
             "themes": [{"name": t.name, "description": t.description} for t in self.themes],
@@ -106,7 +123,6 @@ class Config:
             "formats": list(self.formats),
             "prompts": dict(self.prompts),
             "sources": self.sources,
-            "branding": dict(self.branding),
         }
 
 
@@ -156,6 +172,7 @@ def build_config(settings: dict[str, Any] | None = None, people: list[Person] | 
         company=raw.get("company") or "",
         llm=llm,
         max_input_chars=int(raw["llm"].get("max_input_chars", 150_000)),
+        fast=_model(raw.get("fast"), KEY_ENVS),
         transcription=_model(raw.get("transcription"), {k: v for k, v in KEY_ENVS.items() if k != "anthropic"}),
         extraction=_model(raw.get("extraction"), KEY_ENVS),
         storage=storage(),
@@ -165,7 +182,6 @@ def build_config(settings: dict[str, Any] | None = None, people: list[Person] | 
         formats=raw.get("formats") or [],
         sources=raw.get("sources") or {},
         prompts=raw.get("prompts") or {},
-        branding=raw.get("branding") or {},
         settings_version=settings_version,
     )
 

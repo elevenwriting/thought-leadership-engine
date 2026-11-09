@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from functools import lru_cache
 
 from ..config import Config, get_config
@@ -42,11 +43,28 @@ def _make(storage: dict) -> Store:
 
 
 class _StoreGetter:
+    """The store for this process. The first time each one is used, its tables and first settings
+    are made if they're missing (settings.prepare), whatever uses it first: a page, the API, MCP
+    or a job. If that fails (the database isn't reachable yet), the next use tries again."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.prepared: set[int] = set()
+
     def __call__(self) -> Store:
-        return store_for(get_config().storage)
+        store = store_for(get_config().storage)
+        if id(store) not in self.prepared:
+            with self.lock:
+                if id(store) not in self.prepared:
+                    from ..settings import prepare
+
+                    prepare(store)
+                    self.prepared.add(id(store))
+        return store
 
     def cache_clear(self) -> None:
         _cached.cache_clear()
+        self.prepared.clear()
 
 
 get_store = _StoreGetter()

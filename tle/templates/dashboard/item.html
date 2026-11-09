@@ -1,5 +1,5 @@
 {% extends "dashboard/base.html" %}
-{% set label = item.source_metadata.get("label") or item.source_metadata.get("subject") or item.source_type %}
+{% set label = item.source_metadata.get("title") or item.source_metadata.get("label") or item.source_metadata.get("subject") or item.source_type %}
 {% block title %}{{ label }}{% endblock %}
 {% block content %}
 <a class="crumb" href="/dashboard/items">{{ icon("chevron-left") }}Items</a>
@@ -10,7 +10,11 @@
       <span class="citation">{{ item.citation }}</span>
       <span class="status {{ item.status if item.status != 'reviewed' }}">{{ item.status | capitalize }}</span>
       {% if item.visibility == "private" %}<span class="chip private">{{ icon("lock") }}Private</span>{% endif %}
+      {% if item.reading %}<span class="chip reading">Reading</span>{% endif %}
+      {% set record = item.source_metadata.get("record") %}
+      {% if record %}<span class="chip">{{ {"transcript": "Transcript", "notes": "Notes, paraphrased", "both": "Transcript and notes"}[record] }}</span>{% endif %}
     </div>
+    <p class="small muted" style="margin: 10px 0 0">{{ item.source_type | kind }} from {{ item.via | via }}{% if item.authors %}, by {{ item.authors | join(", ") }}{% endif %}{% if item.reading %}. Shared as reading: someone else's content, not your company's view{% endif %}{% if record == "notes" %}. Meeting notes: the wording is the notetaker's, so it's never quoted as anyone's own words{% endif %}.</p>
   </div>
 </div>
 
@@ -18,9 +22,113 @@
 
 <div class="layout">
 <div>
+  {% if session_topics is not none %}
+  <div class="panel">
+    <div class="panel-head"><h2>Topics</h2><span class="small faint">{{ session_topics | length }} in this session</span></div>
+    {% if item.source_metadata.get("topics_error") %}<p class="small" style="color: var(--err); margin: 0">Finding the topics failed: {{ item.source_metadata["topics_error"] }}. Tag again to retry.</p>{% endif %}
+    {% if item.source_metadata.get("views_error") %}<p class="small" style="color: var(--err); margin: 0">Pulling out the views failed: {{ item.source_metadata["views_error"] }}. Tag again to retry.</p>{% endif %}
+    {% if not session_topics and not item.source_metadata.get("topics_error") %}<p class="small muted" style="margin: 0">No topics yet.</p>{% endif %}
+    {% for t in session_topics %}
+    <div class="topic{{ ' first' if loop.first }}">
+      <h3>{{ t.topic.title }}</h3>
+      <p class="small muted">{{ t.topic.people | join(", ") }}{% if t.topic.people %} · {% endif %}message{{ "s" if t.numbers | length != 1 }} {% for n in t.numbers %}#{{ n }}{{ ", " if not loop.last }}{% endfor %}{% if t.topic.made_by != "model" %} · corrected by {{ t.topic.made_by }}{% endif %}</p>
+      {% if t.topic.summary %}<p>{{ t.topic.summary }}</p>{% endif %}
+      {% for other in t.before %}<p class="small chain">Continues <a href="/dashboard/items/{{ other.row_id }}">{{ other.title }}</a> · {{ other.date_created | date }}</p>{% endfor %}
+      {% for other in t.after %}<p class="small chain">Continued in <a href="/dashboard/items/{{ other.row_id }}">{{ other.title }}</a> · {{ other.date_created | date }}</p>{% endfor %}
+      {% if t.views %}<ul class="views">{% for v, ns in t.views %}<li><strong>{{ v.person }}</strong>{% if v.stance != "new" %} <span class="faint small">{{ v.stance | replace("_", " ") }}{% if v.responds_to %} {{ v.responds_to }}{% endif %}</span>{% endif %}: {{ v.view }}{% if ns %} <span class="faint small">{% for n in ns %}#{{ n }}{{ ", " if not loop.last }}{% endfor %}</span>{% endif %}</li>{% endfor %}</ul>{% endif %}
+      {% if t.text %}<details><summary class="small">Messages</summary><div class="full-text topic-text">{{ t.text }}</div></details>{% endif %}
+      <details class="topic-edit">
+        <summary class="button sm">{{ icon("edit") }}Edit topic</summary>
+        <div class="topic-edit-body">
+          <form method="post" action="/dashboard/items/{{ item.row_id }}/topics" class="topic-edit-part">
+            <h4>Rename</h4>
+            <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="rename"><input type="hidden" name="topic" value="{{ t.topic.id }}">
+            <label for="title-{{ t.topic.id }}">Title</label><input id="title-{{ t.topic.id }}" name="title" value="{{ t.topic.title }}" required>
+            <label for="summary-{{ t.topic.id }}">Summary</label><input id="summary-{{ t.topic.id }}" name="summary" value="{{ t.topic.summary }}">
+            <button type="submit" class="sm">Save</button>
+          </form>
+          {% if t.messages %}
+          <form method="post" action="/dashboard/items/{{ item.row_id }}/topics" class="topic-edit-part">
+            <h4>Move a message <span class="hint">to another topic in this session, or to a new one</span></h4>
+            <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="move">
+            <label for="message-{{ t.topic.id }}">Message</label>
+            <select id="message-{{ t.topic.id }}" name="message">{% for mid, n, preview in t.messages %}<option value="{{ mid }}">#{{ n }} {{ preview }}</option>{% endfor %}</select>
+            <label for="to-{{ t.topic.id }}">Move to</label>
+            <select id="to-{{ t.topic.id }}" name="to" data-new-topic>{% for o in session_topics if o.topic.id != t.topic.id %}<option value="{{ o.topic.id }}">{{ o.topic.title }}</option>{% endfor %}<option value="new">A new topic…</option></select>
+            <div class="new-topic"{% if session_topics | length > 1 %} hidden{% endif %}><label for="new-{{ t.topic.id }}">New topic's title</label><input id="new-{{ t.topic.id }}" name="new_title"></div>
+            <button type="submit" class="sm">Move</button>
+          </form>
+          {% endif %}
+          <div class="topic-edit-part">
+            <h4>Links <span class="hint">to earlier topics this one picks up again</span></h4>
+            {% for link, other in t.links %}
+            <form method="post" action="/dashboard/items/{{ item.row_id }}/topics" class="inline-form">
+              <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="unlink"><input type="hidden" name="link" value="{{ link.id }}">
+              <span class="small">{{ "Continues" if other.date_created < t.topic.date_created else "Continued in" }} {{ other.title }} · {{ other.date_created | date }}{% if link.made_by != "model" %} <span class="faint">(linked by {{ link.made_by }})</span>{% endif %}</span>
+              <button type="submit" class="sm">Remove</button>
+            </form>
+            {% else %}<p class="small muted">Not linked to any other topic.</p>{% endfor %}
+            {% if topic_candidates %}
+            <form method="post" action="/dashboard/items/{{ item.row_id }}/topics" class="inline-form">
+              <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="link"><input type="hidden" name="topic" value="{{ t.topic.id }}">
+              <label for="link-{{ t.topic.id }}">Continues</label>
+              <select id="link-{{ t.topic.id }}" name="to">{% for c in topic_candidates %}<option value="{{ c.id }}">{{ c.date_created | date }} · {{ c.title }}</option>{% endfor %}</select>
+              <button type="submit" class="sm">Link</button>
+            </form>
+            {% endif %}
+          </div>
+        </div>
+      </details>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if item.source_metadata.get("notes") %}
+  <div class="panel">
+    <div class="panel-head"><h2>Meeting notes</h2><span class="small faint">a summary, kept beside the transcript</span></div>
+    <div class="full-text">{{ item.source_metadata["notes"] }}</div>
+  </div>
+  {% endif %}
+  <div class="panel text-panel">
+    <div class="panel-head"><h2>{{ "What they said" if item.source_metadata.get("links") else "Text" }}</h2>
+      <span class="small faint">{{ "{:,}".format(item.extracted_text.split() | length) }} words</span></div>
+    {# The pencil swaps the text for an editor in the same place; saving sends only the text. #}
+    <details class="text-edit">
+      <summary class="button icon-btn" title="Edit the text" aria-label="Edit the text">{{ icon("edit") }}</summary>
+      <form method="post" action="/dashboard/items/{{ item.row_id }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <textarea name="extracted_text" class="tall" aria-label="Text">{{ item.extracted_text }}</textarea>
+        <p class="field-note">Saving keeps its tags as they are; use Tag again to tag it from the new text.</p>
+        <div class="actions"><button class="primary">Save the text</button><button type="button" onclick="this.closest('details').open = false">Cancel</button></div>
+      </form>
+    </details>
+    <div class="full-text{{ ' long' if item.extracted_text | length > 4000 }}">{{ item.extracted_text }}</div>
+    {% for link in item.source_metadata.get("links") or [] %}
+    <div class="linked">
+      <div class="xs faint">{{ "Responding to" if loop.first else "And" }}</div>
+      <div><a href="{{ link.url }}" rel="noopener">{{ link.title or link.url | truncate(80) }}</a></div>
+      <div class="small muted">{{ [link.author, link.site] | select | join(" · ") }}{% if link.shared_by %} · shared by {{ link.shared_by }}{% endif %}{% if link.saved_as %} · <a href="/dashboard/items/{{ link.saved_as }}">saved as its own item</a>{% endif %}{% if link.unread %} · {{ link.unread }}{% endif %}</div>
+      {% if link.excerpt %}<p class="excerpt">{{ link.excerpt }}{{ "…" if link.excerpt | length >= 600 }}</p>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if related %}
+  <div class="panel">
+    <div class="panel-head"><h2>Related</h2><span class="small faint">{{ related | length }}</span></div>
+    {% for r in related %}{% set other = r.item %}
+    <p class="small" style="margin: 4px 0 0">{{ "Shares" if r.outgoing else "Shared in" if r.link.reason.startswith("Shared in") else "Related to" }}
+      <a href="/dashboard/items/{{ other.row_id }}">{{ other.source_metadata.get("title") or other.source_metadata.get("label") or other.source_type | kind }}</a>
+      <span class="faint">· {{ other.date_created | date }}{% if r.link.made_by != "model" %} · linked by {{ r.link.made_by }}{% endif %}</span>
+      {% if not r.link.reason.startswith("Shared in") %}<br><span class="muted">{{ r.link.reason }}</span>{% endif %}</p>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   <form method="post" action="/dashboard/items/{{ item.row_id }}" class="panel">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <input type="hidden" name="has_tags" value="1">
+    <input type="hidden" name="has_reading" value="1">
     {% if item.flags %}<div class="chips" style="margin-bottom: 4px">{% for f in item.flags %}<span class="chip flag{{ ' error' if f == 'tagging_failed' }}">{{ f | flag }}</span>{% endfor %}</div>{% endif %}
     {% if item.source_metadata.get("tagging_error") %}<p class="small" style="color: var(--err); margin: 8px 0 0">Tagging failed: {{ item.source_metadata["tagging_error"] }}</p>{% endif %}
     <div class="grid2">
@@ -28,9 +136,10 @@
         <input id="authors" name="authors" list="people-list" value="{{ item.authors | join(', ') }}" required>
         {% if item.source_metadata.get("author_reason") %}<div class="field-note">{{ item.source_metadata["author_reason"] }}</div>{% endif %}</div>
       <div><label for="date">Date said or written</label><input id="date" type="date" name="date_created" value="{{ item.date_created.strftime('%Y-%m-%d') }}"></div>
+      {% if item.source_metadata.get("title") %}<div><label for="title">Title</label><input id="title" name="title" value="{{ item.source_metadata['title'] }}"></div>{% endif %}
       <div><label for="label">Label <span class="hint">for the citation</span></label><input id="label" name="label" value="{{ item.source_metadata.get('label', '') }}"></div>
-      <div><label for="source_type">Source</label><select id="source_type" name="source_type">
-        {% for t in source_types %}<option value="{{ t }}" {% if t == item.source_type %}selected{% endif %}>{{ t | capitalize }}</option>{% endfor %}</select></div>
+      <div><label for="source_type">Type</label><select id="source_type" name="source_type">
+        {% for t in source_types %}<option value="{{ t }}" {% if t == item.source_type %}selected{% endif %}>{{ t | kind }}</option>{% endfor %}</select></div>
       <div><label for="visibility">Visibility</label><select id="visibility" name="visibility">
         {% for v in visibilities %}<option value="{{ v }}" {% if v == item.visibility %}selected{% endif %}>{{ v | capitalize }}</option>{% endfor %}</select></div>
       <div><label for="status">Status</label><select id="status" name="status">
@@ -52,10 +161,7 @@
       {% for n in item.narrative_tags if n not in narratives | map(attribute="name") %}<label class="toggle narrative"><input type="checkbox" name="narrative_tags" value="{{ n }}" checked><span>{{ n }} <span class="stale">(no longer a narrative)</span></span></label>{% endfor %}
     </div>
 
-    <details style="margin-top: 24px">
-      <summary class="label" style="display: inline">Full text <span class="hint">{{ "{:,}".format(item.extracted_text.split() | length) }} words</span></summary>
-      <textarea name="extracted_text" class="tall" style="margin-top: 8px">{{ item.extracted_text }}</textarea>
-    </details>
+    <label class="check" style="margin-top: 20px"><input type="checkbox" name="reading" {% if item.reading %}checked{% endif %}> Add as context (someone else's content; not a company perspective)</label>
     <div class="actions"><button class="primary">Save changes</button></div>
   </form>
 
@@ -100,6 +206,7 @@
   <div class="panel">
     <h3>Source</h3>
     <dl class="meta">
+      <dt>Came in</dt><dd>{{ item.via | via }}</dd>
       <dt>Saved</dt><dd>{{ item.date_ingested | date(true) }}</dd>
       {% for k, v in metadata.items() %}<dt>{{ k.replace("_", " ") | capitalize }}</dt><dd>{% if v is string and v.startswith("http") %}<a href="{{ v }}" rel="noopener">{{ v | truncate(60) }}</a>{% else %}{{ v | show }}{% endif %}</dd>{% endfor %}
       {% if item.source_metadata.get("note") %}<dt>Note</dt><dd>{{ item.source_metadata["note"] }}</dd>{% endif %}
@@ -118,4 +225,11 @@
   </div>
 </div>
 </div>
+<script>
+document.querySelectorAll("select[data-new-topic]").forEach(select => {
+  const field = select.form.querySelector(".new-topic");
+  const sync = () => { field.hidden = select.value !== "new"; };
+  select.addEventListener("change", sync); sync();
+});
+</script>
 {% endblock %}

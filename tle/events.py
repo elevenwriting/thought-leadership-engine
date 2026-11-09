@@ -16,7 +16,11 @@ log = logging.getLogger(__name__)
 
 def record(store, kind: str, message: str, *, level: str = "info", via: str = "", row_id: str | None = None,
            actor: str = "", key: str = "", **details: Any) -> None:
-    """With a key, an event already recorded under it gets its count raised instead of a new row."""
+    """With a key, an event already recorded under it gets its count raised instead of a new row.
+    Secrets are blanked out of the message, which often quotes an error."""
+    from .secrets import redact
+
+    message = redact(message)
     try:
         if key and store.repeat_event(key, now()):
             return
@@ -33,7 +37,9 @@ def problem(store, message: str, *, via: str, key: str = "", row_id: str | None 
     `key` names the thing that failed (a Gmail message ID, a Drive file ID), so a job that
     retries it every few minutes adds to one problem rather than filling the Activity page.
     Without one, the same message from the same source counts as the same problem."""
-    log.warning("%s: %s", via, message)
+    from .secrets import redact
+
+    log.warning("%s: %s", via, redact(message))
     key = key or hashlib.sha1(f"{via}\n{message}".encode()).hexdigest()
     record(store, "error", message, level="error", via=via, row_id=row_id, actor=actor,
            key=f"{via}:{key}", **details)

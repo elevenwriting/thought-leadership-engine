@@ -23,10 +23,15 @@ class Result:
 
 
 def _run(name: str, check: Callable[[], Result]) -> Result:
+    from .secrets import redact
+
     try:
-        return check()
+        result = check()
     except Exception as exc:  # noqa: BLE001
-        return Result(name, FAIL, f"{type(exc).__name__}: {str(exc)[:300]}")
+        result = Result(name, FAIL, f"{type(exc).__name__}: {str(exc)[:300]}")
+    # Error messages can quote what was sent, such as a token in a header.
+    result.detail, result.fix = redact(result.detail), redact(result.fix)
+    return result
 
 
 def _config() -> Result:
@@ -42,11 +47,22 @@ def _config() -> Result:
 
 
 def _database() -> Result:
-    from .config import get_config
-    from .store import SearchQuery, get_store
+    from .config import get_config, storage
+    from .store import SearchQuery, store_for
 
-    store = get_store()
-    store.search(SearchQuery(limit=1))
+    # Read only: store_for, unlike get_store, doesn't make missing tables.
+    store = store_for(storage())
+    try:
+        store.search(SearchQuery(limit=1))
+    except Exception as exc:  # noqa: BLE001
+        text = str(exc)
+        if "does not exist" in text or "no such table" in text:
+            return Result("Database", FAIL, "It's reachable, but its tables haven't been made yet.",
+                          "They're made the first time the service is used: open the dashboard, or rerun the deploy.")
+        if "password authentication failed" in text:
+            return Result("Database", FAIL, "The service's database password is refused.",
+                          "Rerun the deploy, which makes the database user match the tle-database-url secret.")
+        raise
     backend = get_config().storage.get("backend", "sqlite")
     note = "" if backend == "postgres" else " (for development only)"
     return Result("Database", OK, f"{backend} is reachable{note}.")
@@ -91,8 +107,8 @@ def _model(kind: str) -> Result:
 
 def _api_token() -> Result:
     if os.environ.get("TLE_API_TOKEN"):
-        return Result("API token", OK, "TLE_API_TOKEN is set, for Slack, ChatGPT, MCP and scripts.")
-    return Result("API token", FAIL, "TLE_API_TOKEN isn't set, so Slack, ChatGPT, MCP and scripts can't call the API.",
+        return Result("API token", OK, "TLE_API_TOKEN is set, for MCP clients, ChatGPT and scripts.")
+    return Result("API token", FAIL, "TLE_API_TOKEN isn't set, so MCP clients, ChatGPT and scripts can't call the API.",
                   "Add a long random value as a secret, e.g. from `openssl rand -hex 32`.")
 
 
@@ -110,17 +126,20 @@ def _slack() -> Result:
     chosen = [c["id"] for c in get_config().sources.get("slack", {}).get("channels") or []]
     missing = [c for c in chosen if c not in visible]
     not_in = [f"#{visible[c]['name']}" for c in chosen if c in visible and not visible[c]["member"]]
-    detail = f"The bot sees {len(visible)} channels; {len(chosen)} chosen in Settings."
+    detail = f"The bot sees {len(visible)} channels; {len(chosen)} chosen on Sources."
     if not os.environ.get("SLACK_SIGNING_SECRET"):
         return Result("Slack", FAIL, detail + " SLACK_SIGNING_SECRET isn't set, so Slack's events would be refused.",
                       "Add the Signing Secret from the app's Basic Information page.")
+    if "users:read.email" not in slack.scopes():
+        return Result("Slack", FAIL, detail + " It can't read people's emails, so Slack IDs aren't found from email.",
+                      "Add the users:read.email scope under OAuth & Permissions in the Slack app, then reinstall it.")
     if missing:
         return Result("Slack", FAIL, detail + f" It can't see {', '.join(missing)}.",
-                      "Invite the bot to those channels (/invite), or remove them in Settings.")
+                      "Invite the bot to those channels (/invite), or remove them on Sources.")
     if not_in:
         return Result("Slack", FAIL, detail + f" It isn't in {', '.join(not_in)} yet.",
                       "Save Settings so the bot joins them, or /invite it.")
-    return Result("Slack", OK, detail, "" if chosen else "Pick channels under Slack in Settings.")
+    return Result("Slack", OK, detail, "" if chosen else "Pick channels under Slack on Sources.")
 
 
 def _clickup() -> Result:
@@ -136,7 +155,7 @@ def _clickup() -> Result:
     settings = config.sources.get("clickup", {})
     places, channels = settings.get("places") or [], settings.get("channels") or []
     detail = f"The token sees workspace {team.get('name')}; {len(places)} places and {len(channels)} Chat channels chosen."
-    return Result("ClickUp", OK, detail, "" if places or channels else "Pick places and channels under ClickUp in Settings.")
+    return Result("ClickUp", OK, detail, "" if places or channels else "Pick places and channels under ClickUp on Sources.")
 
 
 def _drive() -> Result:
@@ -152,11 +171,11 @@ def _drive() -> Result:
                           "Deployed, Drive is read as the service account. Locally, see the README's Drive section.")
         raise
     missing = [f["id"] for f in chosen if f.get("id") not in visible]
-    detail = f"{len(visible)} folder{'s' if len(visible) != 1 else ''} shared with this account; {len(chosen)} chosen in Settings."
+    detail = f"{len(visible)} folder{'s' if len(visible) != 1 else ''} shared with this account; {len(chosen)} chosen on Sources."
     if missing:
         return Result("Google Drive", FAIL, detail + f" Can't see {', '.join(missing)}.",
-                      "Share those folders with the service account (Viewer), or remove them in Settings.")
-    return Result("Google Drive", OK, detail, "" if chosen else "Share a folder with the service account and pick it in Settings.")
+                      "Share those folders with the service account (Viewer), or remove them on Sources.")
+    return Result("Google Drive", OK, detail, "" if chosen else "Share a folder with the service account and pick it on Sources.")
 
 
 def _email() -> Result:
@@ -166,7 +185,7 @@ def _email() -> Result:
     inbox = settings.get("gmail", {}).get("inbox")
     if not inbox:
         return Result("Email inbox", SKIP, "No inbox set, so email is off.",
-                      "Set the inbox address under Email in Settings, if you want one.")
+                      "Set the inbox address under Email on Sources, if you want one.")
     from googleapiclient.discovery import build
 
     from .connectors.email_gmail import _credentials

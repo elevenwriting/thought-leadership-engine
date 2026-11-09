@@ -1,26 +1,4 @@
-{% extends "dashboard/base.html" %}
-{% block title %}Needs review{% endblock %}
-{% block content %}
-<div class="page-head">
-  <div>
-    <h1>Needs review</h1>
-    <p class="lead">Items the pipeline couldn't finish on its own. Fix them here, or open one for everything.</p>
-  </div>
-</div>
-
-<datalist id="people-list">{% for name in people %}<option value="{{ name }}">{% endfor %}</datalist>
-
-{% if counts %}
-<div class="tabs">
-  <a href="/dashboard/review" {% if not flag %}aria-current="page"{% endif %}>All <span class="n">{{ counts.values() | sum }}</span></a>
-  {% for key, n in counts.items() %}
-    <a href="/dashboard/review?flag={{ key }}" {% if flag == key %}aria-current="page"{% endif %}>{{ key | flag }} <span class="n">{{ n }}</span></a>
-  {% endfor %}
-</div>
-{% endif %}
-
-{% set back = "/dashboard/review" ~ ("?flag=" ~ flag if flag else "") %}
-{% for item in items %}
+{# One item that needs review, with the fix for each reason. Needs item, back, csrf, source_types. #}
 <div class="card">
   <div class="card-head">
     <div>
@@ -54,8 +32,8 @@
     {% if "unknown_source" in item.flags %}
     <form method="post" action="/dashboard/items/{{ item.row_id }}" class="fix">
       <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="{{ back }}">
-      <div><label for="s-{{ item.row_id }}">Source type{% if item.source_metadata.get('source_type_given') %} <span class="hint">(given as “{{ item.source_metadata['source_type_given'] }}”)</span>{% endif %}</label>
-        <select id="s-{{ item.row_id }}" name="source_type">{% for t in source_types %}<option {% if t == item.source_type %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+      <div><label for="s-{{ item.row_id }}">Type{% if item.source_metadata.get('source_type_given') %} <span class="hint">(given as “{{ item.source_metadata['source_type_given'] }}”)</span>{% endif %}</label>
+        <select id="s-{{ item.row_id }}" name="source_type">{% for t in source_types %}<option value="{{ t }}" {% if t == item.source_type %}selected{% endif %}>{{ t | kind }}</option>{% endfor %}</select></div>
       <button class="primary">Set source</button>
     </form>
     {% endif %}
@@ -87,7 +65,3 @@
     {% endif %}
   </div>
 </div>
-{% else %}
-<div class="empty">Nothing needs review.</div>
-{% endfor %}
-{% endblock %}

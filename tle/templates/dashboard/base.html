@@ -7,8 +7,6 @@
 <script>try { const t = localStorage.getItem("tle-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}</script>
 <link rel="stylesheet" href="/dashboard/theme.css">
 <link rel="stylesheet" href="/dashboard/dashboard.css">
-{# Built only from a checked #RRGGBB colour (branding.accent_css). #}
-{% if accent_css %}<style>{{ accent_css | safe }}</style>{% endif %}
 <script src="/dashboard/select.js" defer></script>
 {% block head %}{% endblock %}
 </head>
@@ -16,16 +14,16 @@
 <div class="app">
 <header class="top">
   <div class="top-inner">
-    <a class="product" href="/dashboard"><span class="product-name">Expertise Database</span><span class="product-sub">A Free Eleven Content Project</span></a>
+    <a class="product" href="/dashboard"><span class="product-name">Expertise Database</span><span class="product-sub">A Free Eleven Content Experiment{% if company and company != "Expertise Database" %} <span aria-hidden="true">•</span> {{ company }}{% endif %}</span></a>
     {% if user %}
     <nav class="main" aria-label="Main">
-      {% for key, label, href in [("activity", "Activity", "/dashboard/activity"), ("review", "Needs review", "/dashboard/review"),
-                                  ("items", "Items", "/dashboard/items"), ("people", "People", "/dashboard/people"),
+      {% for key, label, href in [("items", "Items", "/dashboard/items"), ("people", "People", "/dashboard/people"),
                                   ("taxonomy", "Taxonomy", "/dashboard/taxonomy"), ("coverage", "Coverage", "/dashboard/coverage"),
-                                  ("settings", "Settings", "/dashboard/settings")] %}
-        <a href="{{ href }}" {% if nav == key or (key == "items" and nav == "item") or (key == "people" and nav == "person") or (key == "settings" and nav == "version") %}aria-current="page"{% endif %}>
-          {{- label }}{% if key == "activity" and unread %} <span class="count">{{ unread }}</span>{% endif %}
-          {%- if key == "review" and review_count %} <span class="count quiet">{{ review_count }}</span>{% endif %}</a>
+                                  ("sources", "Sources", "/dashboard/sources"), ("settings", "Settings", "/dashboard/settings")] %}
+        <a href="{{ href }}" {% if nav == key or (key == "items" and nav == "item") or (key == "people" and nav == "person") %}aria-current="page"{% endif %}>
+          {{- label }}
+          {%- if key == "items" and unread %} <span class="count problem" title="Problems">{{ unread }}</span>{% endif %}
+          {%- if key == "items" and review_count %} <span class="count review" title="Needs review">{{ review_count }}</span>{% endif %}</a>
       {% endfor %}
     </nav>
     {% else %}
@@ -47,7 +45,6 @@
       {% endif %}
       <button type="button" class="theme-toggle" aria-label="Switch between light and dark mode" title="Light or dark mode">
         <span class="when-light">{{ icon("moon") }}</span><span class="when-dark">{{ icon("sun") }}</span></button>
-      <span class="logo-chip"><img class="logo" src="/dashboard/logo-light.svg?v={{ logo_version }}" alt="{{ company }}"></span>
     </div>
   </div>
 </header>
@@ -60,8 +57,8 @@
 {% endblock %}
 <footer class="site-footer">
   <div class="site-footer-inner">
-    <span>{{ company }} · Expertise Database</span>
-    <span class="credit">Crafted with expertise by <a href="https://11content.com">Eleven Content</a></span>
+    <span>{% if company and company != "Expertise Database" %}{{ company }} · {% endif %}Expertise Database</span>
+    <span class="credit"><a class="credit-mark" href="https://11content.com" aria-hidden="true" tabindex="-1"><img class="logo on-light" src="/dashboard/logo-light.svg" alt=""><img class="logo on-dark" src="/dashboard/logo-dark.svg" alt=""></a>A Free <a href="https://11content.com">Eleven Content</a> Experiment</span>
   </div>
   <div class="footer-bar"></div>
 </footer>

@@ -15,7 +15,9 @@ CREATE TABLE IF NOT EXISTS items (
   deliverables    TEXT NOT NULL DEFAULT '[]',
   status          TEXT NOT NULL DEFAULT 'new',
   visibility      TEXT NOT NULL DEFAULT 'private',
-  flags           TEXT NOT NULL DEFAULT '[]'
+  flags           TEXT NOT NULL DEFAULT '[]',
+  via             TEXT NOT NULL DEFAULT '',
+  reading         INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS items_date_created ON items (date_created);
 CREATE INDEX IF NOT EXISTS items_drive_file_id ON items (drive_file_id);
@@ -51,6 +53,58 @@ CREATE TABLE IF NOT EXISTS people (
   active          INTEGER NOT NULL DEFAULT 1
 );
 
+-- Parts of an item: a chat session's topics. Each points at the session's messages.
+CREATE TABLE IF NOT EXISTS topics (
+  id           TEXT PRIMARY KEY,
+  row_id       TEXT NOT NULL,
+  place        TEXT NOT NULL DEFAULT '',
+  title        TEXT NOT NULL,
+  summary      TEXT NOT NULL DEFAULT '',
+  messages     TEXT NOT NULL DEFAULT '[]',
+  people       TEXT NOT NULL DEFAULT '[]',
+  date_created TEXT NOT NULL,
+  position     INTEGER NOT NULL DEFAULT 0,
+  made_by      TEXT NOT NULL DEFAULT 'model'
+);
+CREATE INDEX IF NOT EXISTS topics_row_id ON topics (row_id);
+CREATE INDEX IF NOT EXISTS topics_place ON topics (place, date_created DESC);
+
+-- "This is related to that", between topics and items: "topic:<id>" or "item:<row_id>".
+CREATE TABLE IF NOT EXISTS links (
+  id      TEXT PRIMARY KEY,
+  from_id TEXT NOT NULL,
+  to_id   TEXT NOT NULL,
+  kind    TEXT NOT NULL DEFAULT 'continues',
+  reason  TEXT NOT NULL DEFAULT '',
+  made_by TEXT NOT NULL DEFAULT 'model',
+  created TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS links_from ON links (from_id);
+CREATE INDEX IF NOT EXISTS links_to ON links (to_id);
+
+-- Positions people took in a chat session's topics (pulled out when a channel asks for views).
+CREATE TABLE IF NOT EXISTS views (
+  id          TEXT PRIMARY KEY,
+  topic_id    TEXT NOT NULL,
+  row_id      TEXT NOT NULL,
+  person      TEXT NOT NULL,
+  view        TEXT NOT NULL,
+  stance      TEXT NOT NULL DEFAULT 'new',
+  responds_to TEXT NOT NULL DEFAULT '',
+  messages    TEXT NOT NULL DEFAULT '[]',
+  made_by     TEXT NOT NULL DEFAULT 'model',
+  created     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS views_row_id ON views (row_id);
+CREATE INDEX IF NOT EXISTS views_topic_id ON views (topic_id);
+
+-- Where each scheduled sync got to (e.g. the last chat session saved in a channel), keyed by job and place.
+CREATE TABLE IF NOT EXISTS sync_state (
+  key     TEXT PRIMARY KEY,
+  data    TEXT NOT NULL DEFAULT '{}',
+  updated TEXT NOT NULL
+);
+
 -- Every saved version of the settings. The highest version is current.
 CREATE TABLE IF NOT EXISTS settings (
   version  INTEGER PRIMARY KEY,
@@ -59,3 +113,8 @@ CREATE TABLE IF NOT EXISTS settings (
   note     TEXT NOT NULL DEFAULT '',
   data     TEXT NOT NULL
 );
+
+-- Items saved before the way in was recorded take it from their "saved" event.
+UPDATE items SET via = COALESCE((SELECT e.via FROM events e WHERE e.row_id = items.row_id
+                                  AND e.kind = 'item_saved' AND e.via <> '' LIMIT 1), '')
+ WHERE via = '';

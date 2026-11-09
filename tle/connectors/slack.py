@@ -36,7 +36,7 @@ from ..config import Config
 from ..extract import extract_text, guess_mime
 from ..ingest import ingest_text, refresh_text
 from ..settings_form import CHANNEL_DEFAULTS
-from .shared import mostly_links, save_links
+from .shared import has_commentary, link_metadata, read_links, save_pages
 from ..store import Store
 
 log = logging.getLogger(__name__)
@@ -104,7 +104,8 @@ def _fetch_message(client: WebClient, channel: str, ts: str) -> dict | None:
 
 
 class _Names:
-    """Slack user ID -> the person's name, from People first, then Slack."""
+    """Slack user ID -> the person's name: from People by Slack ID, then by the email on their
+    Slack profile (with the users:read.email permission), then their Slack name."""
 
     def __init__(self, client: WebClient, config: Config):
         self.client, self.config, self.cache = client, config, {}
@@ -115,12 +116,34 @@ class _Names:
             if person:
                 self.cache[user_id] = person.name
             else:
-                profile = self.client.users_info(user=user_id)["user"]
-                self.cache[user_id] = profile.get("real_name") or profile.get("name") or user_id
+                user = self.client.users_info(user=user_id)["user"]
+                email = (user.get("profile") or {}).get("email") or ""
+                person = self.config.person_by_email(email) if email else None
+                self.cache[user_id] = person.name if person else (user.get("real_name") or user.get("name") or user_id)
         return self.cache[user_id]
+
 
     def text(self, text: str) -> str:
         return SLACK_LINK.sub(lambda m: m.group(1), MENTION.sub(lambda m: "@" + self(m.group(1)), text))
+
+def member_id(email: str) -> str | None:
+    """A person's Slack member ID from their email, or None if Slack doesn't know it (or the app
+    lacks the users:read.email permission)."""
+    from slack_sdk.errors import SlackApiError
+
+    try:
+        return _client().users_lookupByEmail(email=email)["user"]["id"]
+    except SlackApiError as exc:
+        error = (exc.response.data or {}).get("error") if exc.response is not None else None
+        if error != "users_not_found":
+            log.warning("Couldn't look up a Slack member by email: %s", error or exc)
+        return None
+
+
+def scopes() -> set[str]:
+    """The permissions the bot token has."""
+    response = _client().auth_test()
+    return {s.strip() for s in (response.headers.get("x-oauth-scopes") or "").split(",") if s.strip()}
 
 
 def _download_file(file: dict) -> bytes:
@@ -228,13 +251,6 @@ def handle_event(payload: dict, config: Config, store: Store) -> None:
         _save_files(files, channel, channel_name, names, config, store)
     if not messages:
         return
-    if settings["include_links"]:
-        shared = [(names.text(m["text"]), names(m["user"]), _when(m["ts"])) for m in messages]
-        saved = save_links(shared, via="slack", place=f"Slack #{channel_name}", row_prefix=f"slack-link-{channel}",
-                           metadata={"channel_id": channel, "channel_name": channel_name}, config=config, store=store)
-        # One message that's mostly the link is a note on the link's item, not saved again.
-        if saved and len(messages) == 1 and mostly_links(SLACK_LINK.sub("", messages[0]["text"])):
-            return
 
     if len(messages) == 1:
         text = names.text(messages[0]["text"])
@@ -256,6 +272,20 @@ def handle_event(payload: dict, config: Config, store: Store) -> None:
 
     row_id = f"slack-{channel}-{root_ts}".replace(".", "")
     existing = store.get(row_id)
+    if existing and existing.extracted_text == text:
+        return
+    commentary = has_commentary([names.text(m["text"]) for m in messages])
+    if settings["include_links"]:
+        place = f"Slack #{channel_name}"
+        shared = [(names.text(m["text"]), names(m["user"]), _when(m["ts"])) for m in messages]
+        links = read_links(shared, via="slack", place=place, row_prefix=f"slack-link-{channel}", config=config,
+                           store=store, skip_saved=not commentary)
+        save_pages(links, commentary=commentary, via="slack", place=place, config=config, store=store,
+                   metadata={"channel_id": channel, "channel_name": channel_name})
+        if not commentary and (links or SLACK_LINK.search(" ".join(m["text"] for m in messages))):
+            return  # just links: saved as reading (or as theirs), with nothing of our own to keep
+        metadata.update(link_metadata(links))
+
     if existing:
         refresh_text(existing, text, config=config, store=store, authors=authors, source_metadata=metadata,
                      via="slack")

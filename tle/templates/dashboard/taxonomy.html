@@ -8,52 +8,107 @@
   </div>
 </div>
 
-{% for kind, title, counts, blurb, chip in [("themes", "Themes", theme_counts, "What it's about. The tagger reads each description.", "theme"),
-                                            ("narratives", "Narratives", narrative_counts, "The angle it could support.", "narrative")] %}
-{% set singular = kind[:-1] %}
-<div class="panel-head" style="margin-top: {{ '8px' if loop.first else '40px' }}">
-  <h2 style="margin: 0"><span class="chip {{ chip }}" style="font-size: 13px; padding: 4px 12px">{{ title }}</span></h2>
-  <span class="small faint">{{ blurb }}</span>
+{% macro tax_row(kind, singular, n, tag, count) %}
+{% set prefix = kind ~ "__" ~ n %}
+<div class="tax-row{{ ' editing' if not tag.name }}" data-row>
+  <input type="hidden" name="{{ prefix }}__old" value="{{ tag.name }}">
+  <input type="hidden" name="{{ prefix }}__remove" value="" data-remove>
+  <div>
+    <span class="tax-view tax-name">{{ tag.name }}</span>
+    <input class="tax-edit" name="{{ prefix }}__name" value="{{ tag.name }}" aria-label="{{ singular | capitalize }} name" placeholder="New {{ singular }}">
+  </div>
+  <div>
+    <span class="tax-view{{ ' faint' if not tag.description }}">{{ tag.description or "No description" }}</span>
+    <textarea class="tax-edit" name="{{ prefix }}__description" aria-label="Description" placeholder="What counts as this {{ singular }}. The tagger reads it.">{{ tag.description }}</textarea>
+    {% if count %}
+    <label class="check small tax-removing"><input type="checkbox" name="{{ prefix }}__from_items"> Also take it off {{ count }} item{{ "s" if count != 1 }}</label>
+    {% endif %}
+  </div>
+  <div class="num">{% if tag.name %}<a class="small" href="/dashboard/items?{{ 'theme' if kind == 'themes' else 'narrative' }}={{ quote(tag.name) }}">{{ count }}</a>{% endif %}</div>
+  <div class="tax-actions">
+    <button type="button" class="icon-btn" data-edit title="Edit" aria-label="Edit {{ tag.name or singular }}">{{ icon("edit") }}</button>
+    <button type="button" class="icon-btn" data-remove-toggle title="Remove" aria-label="Remove {{ tag.name or singular }}">{{ icon("trash") }}</button>
+    <button type="button" class="linkish small tax-undo" data-remove-toggle>Undo</button>
+  </div>
 </div>
-<div class="table-wrap">
-  <div class="tax-row head"><span>Name</span><span>Description</span><span style="text-align: right">Items</span><span></span></div>
-  {% for tag in current.get(kind, []) %}
-  <form method="post" action="/dashboard/taxonomy/{{ kind }}" class="tax-row">
-    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="old" value="{{ tag.name }}">
-    <input name="name" value="{{ tag.name }}" aria-label="Name">
-    <textarea name="description" aria-label="Description of {{ tag.name }}">{{ tag.description }}</textarea>
-    <a class="small" href="/dashboard/items?{{ 'theme' if kind == 'themes' else 'narrative' }}={{ quote(tag.name) }}" style="text-align: right; padding-top: 10px">{{ counts[tag.name] }}</a>
-    <div>
-      <div style="display: flex; gap: 8px; align-items: center"><button class="sm primary">Save</button></div>
-      <details style="margin-top: 6px">
-        <summary class="linkish small" style="display: inline">Remove</summary>
-        <div style="margin-top: 10px; padding: 10px 12px; background: var(--err-bg); border-radius: var(--radius-card)">
-          {% if counts[tag.name] %}<label class="check small" style="margin: 0 0 8px; align-items: flex-start"><input type="checkbox" name="from_items" style="margin-top: 3px"><span>Also take it off {{ counts[tag.name] }} item{{ "s" if counts[tag.name] != 1 }}</span></label>{% endif %}
-          <button class="danger sm" name="action" value="remove">Remove {{ singular }}</button>
-        </div>
-      </details>
-    </div>
-  </form>
-  {% endfor %}
-  <form method="post" action="/dashboard/taxonomy/{{ kind }}" class="tax-row new">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <input name="name" placeholder="New {{ singular }}" aria-label="New {{ singular }} name" required>
-    <textarea name="description" placeholder="What counts as this {{ singular }}. The tagger reads it." aria-label="Description"></textarea>
-    <span></span>
-    <div><button class="sm">Add</button></div>
-  </form>
-</div>
-{% if kind == "themes" and ideas %}
-<p class="small muted" style="margin-top: 12px">Theme ideas from the tagger:
-  {% for idea, n in ideas %}<a href="/dashboard/review?flag=theme_ideas">{{ idea }}</a> ({{ n }}){{ ", " if not loop.last }}{% endfor %}</p>
-{% endif %}
-{% endfor %}
+{% endmacro %}
 
-<h2>Formats</h2>
-<form method="post" action="/dashboard/taxonomy/formats" class="panel" style="max-width: 560px">
+<form method="post" action="/dashboard/taxonomy" id="taxonomy">
   <input type="hidden" name="csrf" value="{{ csrf }}">
-  <label for="fm" style="margin-top: 0">One per line <span class="hint">used for deliverables and coverage</span></label>
-  <textarea id="fm" name="formats" style="min-height: 210px">{{ current.get("formats", []) | join("\n") }}</textarea>
-  <div class="actions"><button class="primary">Save formats</button></div>
+  {# Pressing Enter in a field saves the page. #}
+  <button class="sr-only" tabindex="-1" aria-hidden="true">Save</button>
+
+  {% for kind, title, counts, blurb, chip in [("themes", "Themes", theme_counts, "What it's about. The tagger reads each description.", "theme"),
+                                              ("narratives", "Narratives", narrative_counts, "The angle it could support.", "narrative")] %}
+  {% set singular = kind[:-1] %}
+  <div class="panel-head" style="margin-top: {{ '8px' if loop.first else '40px' }}">
+    <h2 style="margin: 0"><span class="chip {{ chip }}" style="font-size: 13px; padding: 4px 12px">{{ title }}</span></h2>
+    <span class="small faint">{{ blurb }}</span>
+  </div>
+  <div class="table-wrap" data-kind="{{ kind }}" data-next="{{ current.get(kind, []) | length }}">
+    <div class="tax-row head"><span>Name</span><span>Description</span><span style="text-align: right">Items</span><span></span></div>
+    {% for tag in current.get(kind, []) %}{{ tax_row(kind, singular, loop.index0, tag, counts[tag.name]) }}{% endfor %}
+    <template>{{ tax_row(kind, singular, "__n__", {"name": "", "description": ""}, 0) }}</template>
+  </div>
+  <button type="button" class="sm" data-add="{{ kind }}" style="margin-top: 12px">{{ icon("plus") }}Add a {{ singular }}</button>
+  {% if kind == "themes" and ideas %}
+  <p class="small muted" style="margin-top: 12px">Theme ideas from the tagger:
+    {% for idea, n in ideas %}<a href="/dashboard/items?view=review&amp;flag=theme_ideas">{{ idea }}</a> ({{ n }}){{ ", " if not loop.last }}{% endfor %}</p>
+  {% endif %}
+  {% endfor %}
+
+  <h2 style="margin-top: 40px">Formats</h2>
+  <div class="panel" style="max-width: 560px">
+    <label for="fm" style="margin-top: 0">One per line <span class="hint">used for deliverables and coverage</span></label>
+    <textarea id="fm" name="formats" style="min-height: 210px">{{ current.get("formats", []) | join("\n") }}</textarea>
+  </div>
+
+  <div class="save-bar" role="region" aria-label="Save">
+    <span class="save-state" aria-live="polite">No unsaved changes</span>
+    <button class="primary">Save taxonomy</button>
+  </div>
 </form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const form = document.getElementById("taxonomy");
+  const bar = form.querySelector(".save-bar"), state = bar.querySelector(".save-state");
+  let dirty = false;
+  const changed = () => {
+    if (dirty) return;
+    dirty = true;
+    bar.classList.add("dirty");
+    state.textContent = "You have unsaved changes";
+  };
+  form.addEventListener("input", changed);
+  form.addEventListener("change", changed);
+  form.addEventListener("submit", () => { dirty = false; });
+  window.addEventListener("beforeunload", (e) => { if (dirty) e.preventDefault(); });
+
+  form.addEventListener("click", (e) => {
+    const row = e.target.closest("[data-row]");
+    if (e.target.closest("[data-edit]") && row) {
+      row.classList.add("editing");
+      row.querySelector(".tax-edit")?.focus();
+    }
+    if (e.target.closest("[data-remove-toggle]") && row) {
+      const flag = row.querySelector("[data-remove]");
+      flag.value = flag.value ? "" : "on";
+      row.classList.toggle("removing", !!flag.value);
+      changed();
+    }
+    const add = e.target.closest("[data-add]");
+    if (add) {
+      const list = form.querySelector(`[data-kind="${add.dataset.add}"]`);
+      const n = list.dataset.next++;
+      const template = list.querySelector("template");
+      template.insertAdjacentHTML("beforebegin", template.innerHTML.replaceAll("__n__", n));
+      template.previousElementSibling.querySelector(".tax-edit")?.focus();
+      changed();
+    }
+  });
+})();
+</script>
 {% endblock %}

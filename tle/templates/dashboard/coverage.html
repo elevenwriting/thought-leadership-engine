@@ -55,11 +55,11 @@
   </div>
 </div>
 <div class="grid2" style="gap: 24px">
-{% for key, title in [("themes", "Themes"), ("narratives", "Narratives"), ("authors", "People"), ("source_types", "Sources")] %}
+{% for key, title in [("themes", "Themes"), ("narratives", "Narratives"), ("authors", "People"), ("sources", "Sources")] %}
   <div><h3 {% if loop.index > 2 %}style="margin-top: 24px"{% endif %}>{{ title }}</h3>
   <div class="table-wrap"><table>
     <thead><tr><th>Name</th><th class="num">Now</th><th class="num">Before</th><th class="num">Change</th></tr></thead>
-    <tbody>{% for row in trends[key][:10] %}<tr><td>{{ row.name | capitalize if key == "source_types" else row.name }}</td><td class="num">{{ row.current }}</td><td class="num">{{ row.previous }}</td>
+    <tbody>{% for row in trends[key][:10] %}<tr><td>{{ row.name | via if key == "sources" else row.name }}</td><td class="num">{{ row.current }}</td><td class="num">{{ row.previous }}</td>
       <td class="num {{ 'up' if row.change > 0 else 'down' if row.change < 0 else 'faint' }}">{{ row.change | signed }}</td></tr>
     {% else %}<tr><td colspan="4" class="muted">Nothing yet.</td></tr>{% endfor %}</tbody>
   </table></div></div>

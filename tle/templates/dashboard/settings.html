@@ -1,43 +1,32 @@
 {% extends "dashboard/base.html" %}
-{% block title %}Settings{% endblock %}
+{% block title %}{{ "Sources" if page == "sources" else "Settings" }}{% endblock %}
 
 {% block main_class %}narrow{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
+    {% if page == "sources" %}
+    <h1>Sources</h1>
+    <p class="lead">Where the database reads from, and how. Company, models and tagging are on <a href="/dashboard/settings" style="text-decoration: underline">Settings</a>.
+      Keys and tokens are secrets in Google Cloud, not settings.</p>
+    {% else %}
     <h1>Settings</h1>
     <p class="lead">{% if not settings_version %}These are the built-in settings until the first save.{% endif %}
-      Themes and narratives are on <a href="/dashboard/taxonomy" style="text-decoration: underline">Taxonomy</a>, people on <a href="/dashboard/people" style="text-decoration: underline">People</a>.
+      Where the database reads from is on <a href="/dashboard/sources" style="text-decoration: underline">Sources</a>, themes and narratives on <a href="/dashboard/taxonomy" style="text-decoration: underline">Taxonomy</a>, people on <a href="/dashboard/people" style="text-decoration: underline">People</a>.
       Keys and tokens are secrets in Google Cloud, not settings.</p>
+    {% endif %}
   </div>
 </div>
 
-<form method="post" action="/dashboard/settings" enctype="multipart/form-data">
+<form method="post" action="/dashboard/{{ page }}" class="settings-form">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   {# Pressing Enter in a field saves the whole page, not the first channel's Save button. #}
-  <button class="sr-only" tabindex="-1" aria-hidden="true">Save settings</button>
+  <button class="sr-only" tabindex="-1" aria-hidden="true">Save</button>
+  {% if page == "settings" %}
   <div class="panel">
     <h2>Company</h2>
     <label for="company" style="margin-top: 0">Name <span class="hint">shown in the header, footer and tagging instructions</span></label>
     <input id="company" name="company" value="{{ current.get('company', '') }}">
-  </div>
-
-  <div class="panel" id="section-branding">
-    <h2>Branding</h2>
-    <p class="small muted" style="margin-top: -6px">Your logo in the header and your colour on buttons, links and highlights. The Expertise Database name and the Eleven Content credit stay as they are.</p>
-    <label for="logo">Logo <span class="hint">SVG, PNG or JPEG, up to 200 KB. It sits on a white background in light and dark mode.</span></label>
-    <div class="logo-row">
-      <span class="logo-chip"><img class="logo" src="/dashboard/logo-light.svg?v={{ logo_version }}" alt=""></span>
-      <input type="file" id="logo" name="logo" accept=".svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg">
-    </div>
-    {% if current.get("branding", {}).get("logo") %}<label class="check"><input type="checkbox" name="logo_reset"> Go back to the default logo</label>{% endif %}
-
-    {% set accent = current.get("branding", {}).get("accent") %}
-    <label for="accent">Accent colour</label>
-    <div class="accent-row">
-      <input type="color" id="accent" name="accent" value="{{ accent or default_accent }}">
-      <span class="button primary sm accent-sample" aria-hidden="true">Sample button</span>
-    </div>
   </div>
 
   <div class="panel" id="section-models">
@@ -50,6 +39,13 @@
         <input id="llm_model" name="llm_model" value="{{ models.llm.model }}" class="mono"></div>
     </div>
     {% if not models.llm.key %}<p class="field-note" style="color: var(--err)">{{ models.llm.env }} isn't set, so nothing can be tagged. Add it as a secret.</p>{% endif %}
+    <div class="grid2">
+      <div><label for="fast_provider">Quick jobs <span class="hint">finding the topics in chat sessions</span></label>
+        <select id="fast_provider" name="fast_provider">{% for p, name in [("", "Same as tagging"), ("anthropic", "Anthropic (Claude)"), ("openai", "OpenAI"), ("gemini", "Google Gemini")] %}<option value="{{ p }}" {% if models.fast.provider == p %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
+      <div><label for="fast_model">Model</label>
+        <input id="fast_model" name="fast_model" value="{{ models.fast.model }}" class="mono" placeholder="the tagging model"></div>
+    </div>
+    {% if models.fast.provider and not models.fast.key %}<p class="field-note" style="color: var(--err)">{{ models.fast.env }} isn't set, so chat topics can't be found. Add it as a secret.</p>{% endif %}
     <div class="grid2">
       <div><label for="transcription_provider">Audio <span class="hint">voice notes and recordings</span></label>
         <select id="transcription_provider" name="transcription_provider">{% for p, name in [("", "Off"), ("openai", "OpenAI"), ("gemini", "Google Gemini")] %}<option value="{{ p }}" {% if models.transcription.provider == p %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
@@ -67,26 +63,17 @@
       <pre class="code" style="white-space: pre-wrap; background: var(--surface-2); padding: 12px 14px; border-radius: var(--radius-card); margin: 10px 0 0">{{ default_prompt }}</pre></details>
   </div>
 
-  <div class="panel">
-    <h2>Default visibility</h2>
-    <p class="small muted" style="margin-top: -6px">Visibility ensures proper governance information for citations and quotes.</p>
-    <div class="vis-rows" role="table" aria-label="Default visibility by source">
-      <div class="vis-row vis-head" role="row"><span role="columnheader">Source</span><span role="columnheader">Public</span><span role="columnheader">Private</span></div>
-    {% for t in source_types %}{% set v = visibility_defaults.get(t, "private") %}
-      <div class="vis-row" role="row">
-        <span role="rowheader" id="vis-{{ t }}">{{ t | capitalize }}</span>
-        {% for opt in ["public", "private"] %}<span role="cell"><input type="radio" name="visibility_{{ t }}" value="{{ opt }}" {% if v == opt %}checked{% endif %} aria-labelledby="vis-{{ t }} vis-{{ opt }}"></span>{% endfor %}
-      </div>
-    {% endfor %}
-    </div>
-    <span hidden id="vis-public">Public</span><span hidden id="vis-private">Private</span>
-  </div>
+  {% endif %}
 
   {% macro control(prefix, f, value, current="") %}{% set name = prefix ~ "__" ~ f.name %}
-  <div class="field{{ ' wide' if f.kind in ('choice', 'list', 'bool', 'pick') }}{{ ' pair' if f.kind in ('select', 'multi', 'emoji') }}"{% if f.show_if %} data-show-if="{{ prefix }}__{{ f.show_if[0] }}={{ f.show_if[1] }}"{% endif %}>
+  <div class="field{{ ' wide' if f.kind in ('choice', 'list', 'bool', 'pick') or f.inline }}{{ ' pair' if f.kind in ('select', 'multi', 'emoji') }}"{% if f.show_if %} data-show-if="{{ prefix }}__{{ f.show_if[0] }}={{ f.show_if[1] }}"{% endif %}>
     {% if f.kind == "bool" %}
       <label class="switch"><input type="checkbox" name="{{ name }}" value="{{ f.on_value }}" {% if value == f.on %}checked{% endif %}><span class="track" aria-hidden="true"></span>
         <span><strong>{{ f.label | replace("{model}", reader_model) }}</strong>{% if f.hint %}<span class="hint">{{ f.hint }}</span>{% endif %}</span></label>
+    {% elif f.inline %}
+      <label class="switch inline-number" for="{{ name }}">
+        <input id="{{ name }}" name="{{ name }}" type="number" min="0" step="1" value="{{ value if value is not none else '' }}">
+        <span><strong>{{ f.label }}</strong>{% if f.hint %}<span class="hint">{{ f.hint }}</span>{% endif %}</span></label>
     {% elif f.kind == "pick" %}{% set options = pick.get(f.source) %}
       {% set search = {"slack": "Search for a channel. Bot must be invited to private channels first.",
                        "drive": "Search for a folder. Share it with the service account first.",
@@ -94,17 +81,18 @@
                        "clickup_channels": "Search for a channel."} %}
       <label for="{{ name }}">{{ f.label }}</label>
       {% if options is not none %}
-      <select id="{{ name }}" name="{{ name }}" data-search="{{ search[f.source] }}"><option value="">Pick one</option>
+      <select id="{{ name }}" name="{{ name }}" data-search="{{ search[f.source] }}"><option value="" data-placeholder>Pick one</option>
         {% for o in options %}{% set label = ("#" ~ o.name) if f.source in ("slack", "clickup_channels") else o.name %}
         <option value="{{ o.id }}" data-label="{{ label }}" {% if o.id == value %}selected{% endif %}>{{ label }}{% if o.private %} · private{% elif f.source == "slack" and not o.member %} · Bot will join channel{% endif %}</option>{% endfor %}
         {% if value and value not in options | map(attribute="id") | list %}<option value="{{ value }}" data-label="{{ current or value }}" selected>{{ current or value }} · can't see it now</option>{% endif %}
       </select>
+      <p class="field-note">Not listed? <a href="/dashboard/sources/refresh/{{ f.source }}">Refresh the list</a> (lists are kept for ten minutes).</p>
       {% else %}
       <input id="{{ name }}" name="{{ name }}" class="mono" value="{{ value or '' }}">
       {% endif %}
     {% elif f.kind == "multi" %}
       <label for="{{ name }}">{{ f.label }}{% if f.hint %} <span class="hint">{{ f.hint }}</span>{% endif %}</label>
-      <select id="{{ name }}" name="{{ name }}" multiple><option value="">Pick one or more</option>{% for val, text in f.options %}<option value="{{ val }}" {% if val in (value or []) %}selected{% endif %}>{{ text }}</option>{% endfor %}</select>
+      <select id="{{ name }}" name="{{ name }}" multiple><option value="" data-placeholder>Pick one or more</option>{% for val, text in f.options %}<option value="{{ val }}" {% if val in (value or []) %}selected{% endif %}>{{ text }}</option>{% endfor %}</select>
     {% elif f.kind == "select" %}
       <label for="{{ name }}">{{ f.label }}</label>
       <select id="{{ name }}" name="{{ name }}">{% for val, text in f.options %}<option value="{{ val }}" {% if value == val %}selected{% endif %}>{{ text }}</option>{% endfor %}</select>
@@ -122,7 +110,7 @@
       </fieldset>
     {% else %}
       <label for="{{ name }}">{{ f.label }}{% if f.hint %} <span class="hint">{{ f.hint }}</span>{% endif %}</label>
-      <input id="{{ name }}" name="{{ name }}" {% if f.kind == "number" %}type="number" min="0" step="any"{% endif %}{% if f.name == "id" %} class="mono"{% endif %}
+      <input id="{{ name }}" name="{{ name }}" {% if f.kind == "number" %}type="number" min="0" step="any"{% elif f.kind == "date" %}type="date"{% endif %}{% if f.name == "id" %} class="mono"{% endif %}
         value="{{ value | join(', ') if f.kind == 'list' else (value if value is not none else '') }}">
     {% endif %}
   </div>
@@ -143,16 +131,28 @@
   </div>
   {% endmacro %}
 
+  {% if page == "sources" %}
   {% for section in sections %}{% set vals = values[section.key] %}
   {% set blocked = access_errors.get(section.key) %}
   <div class="panel source-panel" id="section-{{ section.key }}"{% if blocked and blocked[0] == "loading" %} data-loading{% endif %}>
     {# A section that can't be reached isn't sent, so saving leaves its settings as they are. #}
     {% if not blocked %}<input type="hidden" name="sections" value="{{ section.key }}">{% endif %}
-    <h2>{{ section.title }}</h2>
+    {% set run = sync_status.get(section.key) %}
+    <div class="panel-head"><h2>{{ section.title }}</h2>
+      {% if run %}<div class="sync-status small" data-sync="{{ section.key }}"{% if run.running %} data-state="busy"{% endif %}>
+        <span class="sync-line{{ ' failed' if run.error and not run.running }}" role="status" aria-live="polite">{{ run.line }}</span>
+        <button type="submit" class="sm read-now" formaction="/dashboard/sources/read/{{ section.key }}" formmethod="post" formnovalidate{% if run.running %} disabled{% endif %}>{{ icon("refresh") }}<span>Read now</span></button>
+      </div>{% endif %}
+    </div>
     {% if saved_section == section.key %}<div class="flash access-error" role="status">{{ icon("tick") }}<span>{{ saved_message }}</span></div>{% endif %}
-    {% if blocked %}<div class="flash access-error{{ ' err' if blocked[0] == 'error' }}" role="{{ 'alert' if blocked[0] == 'error' else 'status' }}">{{ icon("alert" if blocked[0] == "error" else "refresh") }}<span>{{ blocked[1] }}</span></div>{% endif %}
+    {% if blocked %}<div class="flash access-error{{ ' err' if blocked[0] == 'error' else ' loading' }}" role="{{ 'alert' if blocked[0] == 'error' else 'status' }}">{{ icon("alert" if blocked[0] == "error" else "refresh") }}<span>{{ blocked[1] }}</span></div>{% endif %}
     <fieldset class="section-body"{% if blocked %} disabled{% endif %}>
     <p class="small muted" style="margin-top: -6px">{{ section.lead }}</p>
+    {% if section.key == "drive" and service_account %}
+    <div class="copy-row"><span class="small">Share folders with</span>
+      <code class="mono" id="service-account">{{ service_account }}</code>
+      <button type="button" class="sm copy" data-copy="service-account">Copy</button></div>
+    {% endif %}
     {% for spec in section.rows %}{% set rows = vals.rows[spec.key] %}
     {% if spec.title %}<h3 class="rows-title">{{ spec.title }}</h3>{% endif %}
     <div class="rows" data-key="{{ spec.key }}" data-next="{{ rows | length }}" data-noun="{{ spec.noun }}" data-prefix="{{ spec.name_prefix }}">
@@ -175,20 +175,81 @@
   </div>
   {% endfor %}
 
+  <div class="panel">
+    <h2>Default visibility</h2>
+    <p class="small muted" style="margin-top: -6px">Visibility ensures proper governance information for citations and quotes.</p>
+    <div class="vis-rows" role="table" aria-label="Default visibility by source">
+      <div class="vis-row vis-head" role="row"><span role="columnheader">Source</span><span role="columnheader">Public</span><span role="columnheader">Private</span></div>
+    {% for t in source_types %}{% set v = visibility_defaults.get(t, "private") %}
+      <div class="vis-row" role="row">
+        <span role="rowheader" id="vis-{{ t }}">{{ t | capitalize }}</span>
+        {% for opt in ["public", "private"] %}<span role="cell"><input type="radio" name="visibility_{{ t }}" value="{{ opt }}" {% if v == opt %}checked{% endif %} aria-labelledby="vis-{{ t }} vis-{{ opt }}"></span>{% endfor %}
+      </div>
+    {% endfor %}
+    </div>
+    <span hidden id="vis-public">Public</span><span hidden id="vis-private">Private</span>
+  </div>
+  {% endif %}
+
   <div class="save-bar" role="region" aria-label="Save">
     <span class="save-state" aria-live="polite">No unsaved changes</span>
-    <button class="primary">Save settings</button>
+    <button class="primary">Save {{ "sources" if page == "sources" else "settings" }}</button>
   </div>
 </form>
 
 {% endblock %}
 
 {% block scripts %}
+<script>
+// "Read now": starts the run without leaving the page, then follows it. The button spins while
+// the run goes, turns green for a moment when it's done, then settles back.
+(() => {
+  const csrf = document.querySelector('input[name="csrf"]')?.value || "";
+  const follow = (box, since) => {
+    const source = box.dataset.sync, line = box.querySelector(".sync-line"), button = box.querySelector(".read-now");
+    const busy = on => { box.dataset.state = on ? "busy" : ""; button.disabled = on; };
+    busy(true);
+    const check = async () => {
+      let run;
+      try { run = await (await fetch(`/dashboard/sources/read/${source}/status`, { headers: { Accept: "application/json" } })).json(); }
+      catch { setTimeout(check, 5000); return; }
+      line.textContent = run.line;
+      if (run.running || (since && (!run.finished || run.finished < since))) { setTimeout(check, 3000); return; }
+      busy(false);
+      line.classList.toggle("failed", run.failed);
+      box.dataset.state = run.failed ? "failed" : "done";
+      setTimeout(() => { if (box.dataset.state !== "busy") box.dataset.state = ""; }, 2500);
+    };
+    setTimeout(check, 2000);
+  };
+  const setUp = box => {
+    const button = box.querySelector(".read-now"), line = box.querySelector(".sync-line");
+    if (box.dataset.state === "busy") follow(box, null);
+    button.addEventListener("click", async event => {
+      event.preventDefault();
+      box.dataset.state = "busy"; button.disabled = true; line.classList.remove("failed"); line.textContent = "Starting…";
+      const body = new FormData(); body.append("csrf", csrf);
+      try {
+        const response = await fetch(`/dashboard/sources/read/${box.dataset.sync}`, { method: "POST", body, headers: { Accept: "application/json" } });
+        const data = await response.json();
+        if (!response.ok && !data.running) throw new Error(data.error || "Couldn't start it.");
+        line.textContent = data.line;
+        // Done once a run finishes after this request (the server's clock, as ISO strings).
+        follow(box, response.ok ? data.requested : null);
+      } catch (error) {
+        box.dataset.state = "failed"; button.disabled = false; line.classList.add("failed"); line.textContent = error.message;
+      }
+    });
+  };
+  window.tleSyncBox = setUp;  // also for a section swapped in once its list has loaded
+  document.querySelectorAll(".sync-status[data-sync]").forEach(setUp);
+})();
+</script>
 <script>window.TLE_EMOJI = {{ emoji | tojson }};</script>
 <script src="/dashboard/emoji.js"></script>
 <script>
 (() => {
-  const form = document.querySelector("form[action='/dashboard/settings']");
+  const form = document.querySelector("form.settings-form");
   function showIf() {
     for (const el of form.querySelectorAll("[data-show-if]")) {
       const [name, value] = el.dataset.showIf.split("=");
@@ -215,18 +276,23 @@
   window.addEventListener("beforeunload", (e) => { if (dirty) e.preventDefault(); });
 
   // Switching provider switches the model to that provider's, unless one of your own was typed.
-  const defaults = {{ model_defaults | tojson }}, audioDefaults = {{ audio_defaults | tojson }};
-  for (const [select, input, names] of [["llm_provider", "llm_model", defaults], ["transcription_provider", "transcription_model", audioDefaults]]) {
+  const defaults = {{ model_defaults | tojson }}, fastDefaults = {{ fast_defaults | tojson }}, audioDefaults = {{ audio_defaults | tojson }};
+  for (const [select, input, names] of [["llm_provider", "llm_model", defaults], ["fast_provider", "fast_model", fastDefaults], ["transcription_provider", "transcription_model", audioDefaults]]) {
     const field = document.getElementById(input);
-    document.getElementById(select).addEventListener("change", (e) => {
+    document.getElementById(select)?.addEventListener("change", (e) => {
       if (!field.value || Object.values(names).includes(field.value)) field.value = names[e.target.value] || "";
     });
   }
 
-  // Picking a colour previews it on the page.
-  const accent = document.getElementById("accent");
-  accent.addEventListener("input", () => {
-    for (const name of ["--accent", "--focus", "--link-hover"]) document.documentElement.style.setProperty(name, accent.value);
+  // Copy buttons: put the text next to them on the clipboard.
+  document.addEventListener("click", async (e) => {
+    const button = e.target.closest("button.copy");
+    if (!button) return;
+    try {
+      await navigator.clipboard.writeText(document.getElementById(button.dataset.copy).textContent.trim());
+      button.textContent = "Copied";
+      setTimeout(() => { button.textContent = "Copy"; }, 1500);
+    } catch {}
   });
 
   function setUpRows(rows) {
@@ -304,7 +370,7 @@
   let tries = 0;
   async function checkLoading() {
     const waiting = form.querySelectorAll(".source-panel[data-loading]");
-    if (!waiting.length || tries++ > 40) return;
+    if (!waiting.length || tries++ > 90) return;  // about 7 minutes, enough for a rate limit to pass
     try {
       const page = new DOMParser().parseFromString(await (await fetch(location.pathname)).text(), "text/html");
       for (const old of waiting) {
@@ -314,12 +380,14 @@
         fresh.querySelectorAll("select").forEach((s) => window.tleSelect?.(s));
         window.tleEmoji?.(fresh);
         fresh.querySelectorAll(".rows").forEach(setUpRows);
+        fresh.querySelectorAll(".sync-status[data-sync]").forEach((box) => window.tleSyncBox?.(box));
         showIf();
       }
     } catch {}
-    setTimeout(checkLoading, 3000);
+    // Quickly at first, since most lists take a few seconds; then every five, for a rate limit.
+    setTimeout(checkLoading, tries < 15 ? 2000 : 5000);
   }
-  setTimeout(checkLoading, 3000);
+  setTimeout(checkLoading, 1000);
 })();
 </script>
 {% endblock %}

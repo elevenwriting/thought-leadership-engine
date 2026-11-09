@@ -6,10 +6,10 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from . import events
+from . import events, meetings
 from .config import SOURCE_TYPES, VISIBILITIES, Config
 from .extract import extract_text, guess_mime
-from .models import Item
+from .models import Item, Link
 from .store import Store
 from .tagger import tag
 
@@ -44,10 +44,25 @@ def _utc(value: datetime | None) -> datetime:
 def ingest_text(text: str, *, config: Config, store: Store, via: str = "", actor: str = "", **kwargs: Any) -> Item:
     """Tags and saves an item, and records it for the dashboard. `via` says which way it came
     in (slack, email, drive...). See prepare_item for the other arguments."""
-    item = prepare_item(text, config=config, **kwargs)
+    item = prepare_item(text, config=config, via=via, **kwargs)
     store.insert(item)
     events.item_saved(store, item, via=via, actor=actor)
+    link_shared(item, store)
     return item
+
+
+def link_shared(item: Item, store: Store) -> None:
+    """Pages and docs an item shares that are saved as items of their own get a "related" link
+    from it, once each."""
+    ends = {f"item:{link['saved_as']}" for link in item.source_metadata.get("links") or [] if link.get("saved_as")}
+    ends.discard(f"item:{item.row_id}")
+    if not ends:
+        return
+    me = f"item:{item.row_id}"
+    have = {lk.to_id for lk in store.links_for([me]) if lk.from_id == me and lk.kind == "related"}
+    where = item.source_metadata.get("label") or item.source_type
+    for end in sorted(ends - have):
+        store.add_link(Link(from_id=me, to_id=end, kind="related", reason=f"Shared in {where}"))
 
 
 def prepare_item(
@@ -56,6 +71,8 @@ def prepare_item(
     config: Config,
     source_type: str,
     authors: list[str],
+    via: str = "",
+    reading: bool = False,
     date_created: datetime | None = None,
     visibility: str | None = None,
     source_metadata: dict[str, Any] | None = None,
@@ -85,11 +102,14 @@ def prepare_item(
     if not authors:
         raise ValueError("Every item needs at least one author.")
 
+    text = meetings.prepare(text, source_metadata, source_type)
     authors, author_ids = resolve_people(authors, config)
     item = Item(
         **({"row_id": row_id} if row_id else {}),
         date_created=_utc(date_created),
         source_type=source_type,
+        via=via,
+        reading=reading,
         source_metadata=source_metadata,
         authors=authors,
         author_ids=author_ids,
@@ -113,13 +133,34 @@ def _known(values: list[str] | None, allowed: set[str]) -> list[str]:
     return [v for v in dict.fromkeys(values or []) if v in allowed]
 
 
+def _tagging_note(item: Item) -> str:
+    """The submitter's note, plus what the tagger needs to know about shared links and reading."""
+    parts = [item.source_metadata.get("note", "")]
+    if meetings.paraphrased(item.source_metadata):
+        parts.append(meetings.TAGGING_NOTE)
+    elif item.source_metadata.get("notes"):
+        parts.append("This is a meeting transcript. The meeting's notes, for context:\n"
+                     + str(item.source_metadata["notes"])[:4000])
+    if item.reading:
+        parts.append("This is someone else's content, which the team shared as reading. Tag what it's about, "
+                     "and say in the summary whose view it is.")
+    links = item.source_metadata.get("links") or []
+    if links:
+        pages = "\n".join(
+            f"- {link.get('title') or link.get('url')}" + (f" by {link['author']}" if link.get("author") else "")
+            + (f" ({link['site']})" if link.get("site") else "") + (f": {link['excerpt']}" if link.get("excerpt") else "")
+            for link in links)
+        parts.append("The people in this item are responding to what they shared, which someone else may have "
+                     "written. Tag and summarise their response and their view, not the shared content:\n" + pages)
+    return "\n\n".join(p for p in parts if p.strip())
+
+
 def _apply_tags(item: Item, config: Config) -> None:
     """A tagging failure shouldn't lose the capture: the item is kept untagged with the reason."""
     item.source_metadata.pop("tagging_error", None)
     item.source_metadata.pop("suggested_themes", None)
     try:
-        tags = tag(item.extracted_text, config, item.source_type, item.authors,
-                   note=item.source_metadata.get("note", ""))
+        tags = tag(item.extracted_text, config, item.source_type, item.authors, note=_tagging_note(item))
         item.summary = tags["summary"]
         item.theme_tags = tags["theme_tags"]
         item.narrative_tags = tags["narrative_tags"]
@@ -153,6 +194,7 @@ def refresh_text(
     _apply_tags(item, config)
     events.record(store, "item_updated", f"Updated and re-tagged {item.source_metadata.get('label') or item.source_type}"
                   " because its source changed", via=via, row_id=item.row_id)
+    link_shared(item, store)
     return store.update(item.row_id, {
         "extracted_text": item.extracted_text,
         "authors": item.authors,

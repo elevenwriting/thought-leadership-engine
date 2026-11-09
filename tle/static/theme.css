@@ -1,5 +1,5 @@
 /* ==========================================================================
-   theme.css — the Eleven Content default theme
+   theme.css — the Eleven Content theme, as in Eleven's Workplace
    --------------------------------------------------------------------------
    Every brand decision lives here. dashboard.css reads only these variables,
    so another company replaces this file (plus logo-light.svg / logo-dark.svg)
@@ -28,10 +28,24 @@
   --bg: #F6F7F8;            /* page */
   --surface: #FFFFFF;       /* panels, tables, header */
   --surface-2: #F3F4F6;     /* quiet fills inside panels */
-  --table-head: #F6F7F8;
+  --table-head: #FFFFFF;
   --row-hover: #F6F7F8;
-  --header-bg: #FFFFFF;
   --input-bg: #FFFFFF;
+
+  /* The top bar: Eleven's blue gradient, with light text on it */
+  --header-bg: linear-gradient(100deg, #258DC9 0%, #0A3857 62%);
+  --header-ink: #E5E7EB;
+  --header-ink-strong: #FFFFFF;
+  --header-ink-faint: rgba(255, 255, 255, 0.70);
+  --header-hover: rgba(255, 255, 255, 0.08);
+  --header-current: rgba(255, 255, 255, 0.12);
+  --header-line: rgba(255, 255, 255, 0.18);
+
+  /* Amber: counts, the current page, and the main action on the top bar */
+  --amber: #FFBD30;
+  --amber-hover: #FD890C;
+  --amber-ink: #111827;
+  --amber-tag: #FCE8C5;
 
   /* Lines */
   --line: #E5E7EB;          /* hairlines */
@@ -86,14 +100,15 @@
   --gap: #9B6508;           /* material, nothing made yet */
 
   /* Shape */
-  --radius-card: 4px;
+  --radius-card: 16px;
+  --radius-flash: 10px;
   --radius-control: 6px;
   --radius-pill: 999px;
   --shadow-pop: 0 2px 4px rgba(14, 22, 40, 0.08), 0 12px 32px rgba(14, 22, 40, 0.08);
 
   /* Brand furniture */
-  --logo-height: 28px;      /* the logo is sized by height, on its white chip */
-  --footer-bar: #111827;    /* set to transparent to drop it */
+  --logo-height: 16px;      /* Eleven's logo, small, in the footer */
+  --footer-bar: linear-gradient(90deg, #258DC9 0%, #0A3857 62%);  /* set to transparent to drop it */
 }
 
 /* ---------- Dark ---------- */
@@ -101,9 +116,9 @@
   --bg: #111827;
   --surface: #1F2937;
   --surface-2: #374151;
-  --table-head: #111827;
+  --table-head: #1F2937;
   --row-hover: rgba(255, 255, 255, 0.04);
-  --header-bg: #1F2937;
+  --header-bg: linear-gradient(100deg, #1B6E9F 0%, #072C45 62%);
   --input-bg: #111827;
   --line: #374151;
   --line-input: #9CA3AF;
@@ -146,14 +161,15 @@
   --heat-ink-4: #111827;
   --gap: #F4A92A;
   --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45);
-  --footer-bar: #374151;
+  --footer-bar: linear-gradient(90deg, #1B6E9F 0%, #072C45 62%);
+  --amber-tag: rgba(255, 189, 48, 0.22);
 }
 
 /* Follow the operating system unless a page forces light. Same values as above. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #111827; --surface: #1F2937; --surface-2: #374151; --table-head: #111827;
-    --row-hover: rgba(255, 255, 255, 0.04); --header-bg: #1F2937; --input-bg: #111827;
+    --bg: #111827; --surface: #1F2937; --surface-2: #374151; --table-head: #1F2937;
+    --row-hover: rgba(255, 255, 255, 0.04); --header-bg: linear-gradient(100deg, #1B6E9F 0%, #072C45 62%); --input-bg: #111827;
     --line: #374151; --line-input: #9CA3AF;
     --ink: #F3F4F6; --ink-soft: #E5E7EB; --ink-muted: #D1D5DB; --ink-faint: #9CA3AF;
     --link: #F3F4F6; --link-hover: #C2D3FF;
@@ -168,6 +184,7 @@
     --heat-0: rgba(255, 255, 255, 0.03); --heat-1: rgba(51, 167, 235, 0.18);
     --heat-2: rgba(51, 167, 235, 0.36); --heat-3: rgba(51, 167, 235, 0.62); --heat-4: #33A7EB;
     --heat-ink: #F3F4F6; --heat-ink-3: #FFFFFF; --heat-ink-4: #111827; --gap: #F4A92A;
-    --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45); --footer-bar: #374151;
+    --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45); --footer-bar: linear-gradient(90deg, #1B6E9F 0%, #072C45 62%);
+    --amber-tag: rgba(255, 189, 48, 0.22);
   }
 }

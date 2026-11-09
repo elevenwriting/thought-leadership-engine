@@ -55,7 +55,7 @@ def coverage(store: Store, config: Config, visibility: str | None = None) -> dic
 
 
 def trends(store: Store, days: int = 30) -> dict:
-    """Activity per theme, narrative, author and source in the last `days` days,
+    """Activity per theme, narrative, author, way in and type in the last `days` days,
     compared with the `days` before that."""
     current_start = now() - timedelta(days=days)
     previous_start = current_start - timedelta(days=days)
@@ -82,4 +82,5 @@ def trends(store: Store, days: int = 30) -> dict:
         "narratives": split(lambda r: r.narrative_tags),
         "authors": split(lambda r: r.authors),
         "source_types": split(lambda r: r.source_type),
+        "sources": split(lambda r: r.via or "unknown"),
     }

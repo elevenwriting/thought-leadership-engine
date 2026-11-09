@@ -51,6 +51,7 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("sync-drive", help="Ingest new files from the Drive folders chosen in Settings.")
     sub.add_parser("sync-clickup", help="Ingest tagged tasks, Docs and reacted Chat messages from ClickUp.")
     sub.add_parser("sync-email", help="Ingest new mail from the inbox set in Settings.")
+    sub.add_parser("relate", help="Link items saved since the last run to related ones from other sources.")
 
     p = sub.add_parser("search", help="Search items.")
     p.add_argument("text", nargs="?")
@@ -114,19 +115,13 @@ def main(argv: list[str] | None = None) -> None:
         else:
             sys.exit("Give a file, --text or --url.")
         _print(item.to_result(include_text=False))
-    elif args.command == "sync-drive":
-        from .connectors.drive_sync import sync
+    elif args.command in ("sync-drive", "sync-clickup", "sync-email"):
+        from . import syncs
 
-        print(f"Saved {sync(config, store)} new files.")
-    elif args.command == "sync-clickup":
-        from .connectors import clickup
-
-        done = clickup.sync(config, store)
-        print(f"Checked {done['tasks']} tasks, {done['docs']} Docs and {done['chat']} Chat channels.")
-    elif args.command == "sync-email":
-        from .connectors.email_gmail import poll
-
-        _print(poll(config, store))
+        print(syncs.sync(args.command.removeprefix("sync-"), config, store))
+        _relate(config, store)
+    elif args.command == "relate":
+        _relate(config, store)
     elif args.command == "search":
         items = store.search(SearchQuery(text=args.text, themes=args.theme, narratives=args.narrative,
                                          authors=args.author, visibility=args.visibility, limit=args.limit))
@@ -139,3 +134,14 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def _relate(config, store) -> None:
+    """After a sync, the new items are linked to related ones from other sources. A failure here
+    never fails the sync."""
+    from . import related
+
+    try:
+        print(f"Looked for related items for {related.catch_up(config, store)} new items.")
+    except Exception as exc:  # noqa: BLE001
+        print(f"Couldn't look for related items: {exc}")

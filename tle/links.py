@@ -74,7 +74,8 @@ class Page:
 def find_urls(text: str, limit: int = 5) -> list[str]:
     urls = []
     for match in URL.finditer(text or ""):
-        url = match.group(0).rstrip(".,;:!?*>")
+        # Markdown escapes (ClickUp writes What\_Is for What_Is) aren't part of the address.
+        url = re.sub(r"\\([_*~`])", r"\1", match.group(0)).rstrip(".,;:!?*>")
         if not NOT_CONTENT.search(url) and url not in urls:
             urls.append(url)
     return urls[:limit]

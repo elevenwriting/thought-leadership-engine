@@ -45,6 +45,7 @@ class Attribution:
     needs_review: bool = False
     fields: dict[str, str] = field(default_factory=dict)
     source_type: str | None = None  # picked from the choices given, when there were several
+    record: str = ""  # for a meeting: transcript, notes or both (see meetings.py)
 
 
 def parse_date(value: str) -> datetime | None:
@@ -103,15 +104,26 @@ SCHEMA = {
             "description": "When it was originally said or written, as YYYY-MM-DD, only if the content shows it. Otherwise empty.",
         },
         "reason": {"type": "string", "description": "One sentence on how you decided."},
+        "record": {
+            "type": "string", "enum": ["transcript", "notes", "both", "neither"],
+            "description": "For a meeting, call or interview: transcript (word for word, speaker by speaker), notes "
+                           "(a summary by a notetaker or an AI such as Gemini or Granola), or both in one document. "
+                           "neither for anything else.",
+        },
     },
-    "required": ["authors", "date", "reason"],
+    "required": ["authors", "date", "reason", "record"],
 }
 
 
 def detect(text: str, *, config: Config, submitter: str, context: str = "",
            source_types: list[str] | None = None) -> Attribution:
     """Asks the LLM who the author is. Falls back to the submitter, flagged for review.
-    With several source types to choose from, it also picks the one that fits."""
+    With several source types to choose from, it also picks the one that fits. With no
+    submitter (a page someone linked to), only the page itself can name its author."""
+    last_rule = ("- If nothing points to anyone else, it's the submitter's own writing: return the submitter."
+                 if submitter else
+                 "- Whoever shared it is not its author unless the page itself shows they wrote it (a byline, "
+                 "their own post).")
     people = "\n".join(f"- {p.name} ({p.role}){', ' + p.email if p.email else ''}" for p in config.people)
     system = f"""You work out who the author of a piece of content is, for {config.company or 'a company'}'s
 thought leadership database. The author is the person whose ideas, opinions or words these are,
@@ -126,12 +138,14 @@ How to decide:
   not the interviewer or note-taker, unless they're the ones giving the opinions.
 - Notes about someone ("Jane's take on pricing", "from my call with Mo"): that person.
 - A post, article or document with a byline or signature: the person named.
-- If nothing points to anyone else, it's the submitter's own writing: return the submitter.
+- A message sharing a link with comments on it: whoever wrote the comments, not the linked page's author.
+{last_rule}
 - If you genuinely can't tell, return no authors."""
     prompt = (
-        f"Submitted by: {submitter}\n\n"
+        (f"Submitted by: {submitter}\n\n" if submitter else "")
         + (f"<context>\n{context[:CONTEXT_CHARS]}\n</context>\n\n" if context else "")
-        + f"<content>\n{text[:CONTEXT_CHARS]}\n</content>\n\nWho is the author, and when was it said or written?"
+        + f"<content>\n{text[:CONTEXT_CHARS]}\n</content>\n\nWho is the author, and when was it said or written? "
+        "If it's a meeting, call or interview, is it a transcript, notes, or both?"
     )
     schema = SCHEMA
     if source_types and len(source_types) > 1:
@@ -144,18 +158,20 @@ How to decide:
         result = LLM(config.llm).generate_json(system, prompt, schema)
     except Exception as exc:  # noqa: BLE001
         log.warning("Author detection failed: %s", exc)
-        return Attribution([submitter], source="submitter", reason=f"Detection failed: {exc}"[:300], needs_review=True)
+        return Attribution([submitter] if submitter else [], source="submitter",
+                           reason=f"Detection failed: {exc}"[:300], needs_review=True)
 
     authors = [a.strip() for a in result.get("authors", []) if a and a.strip()]
     date = parse_date(result.get("date") or "") if result.get("date") else None
     picked = result.get("source_type") if result.get("source_type") in (source_types or []) else None
+    record = result.get("record") if result.get("record") in ("transcript", "notes", "both") else ""
     if not authors:
-        return Attribution([submitter], date=date, source="submitter", reason=result.get("reason", ""),
-                           needs_review=True, source_type=picked)
+        return Attribution([submitter] if submitter else [], date=date, source="submitter", reason=result.get("reason", ""),
+                           needs_review=True, source_type=picked, record=record)
     known = {p.name for p in config.people} | {p.email.lower() for p in config.people if p.email}
     unknown = any(a not in known and a.lower() not in known for a in authors)
     return Attribution(authors, date=date, source="llm", reason=result.get("reason", ""), needs_review=unknown,
-                       source_type=picked)
+                       source_type=picked, record=record)
 
 
 def attribute(
@@ -183,4 +199,5 @@ def metadata(who: Attribution, submitter: str) -> dict:
         "author_source": who.source,
         **({"author_reason": who.reason} if who.reason else {}),
         **({"author_needs_review": True} if who.needs_review else {}),
+        **({"record": who.record} if who.record else {}),
     }

@@ -1,12 +1,13 @@
 <tr>
   {% if "date" in columns %}<td class="small nowrap">{{ item.date_created | date }}</td>{% endif %}
   <td>
-    <a class="item-title" href="/dashboard/items/{{ item.row_id }}">{{ item.source_metadata.get("label") or item.source_metadata.get("subject") or item.source_type }}</a>
-    <div class="item-meta">{{ item.source_type | capitalize if meta == "source" else item.authors | join(", ") }}</div>
+    <a class="item-title" href="/dashboard/items/{{ item.row_id }}">{{ item.source_metadata.get("title") or item.source_metadata.get("label") or item.source_metadata.get("subject") or item.source_type }}</a>
+    <div class="item-meta">{{ (item.via | via) ~ " · " ~ (item.source_type | kind) if meta == "source" else item.authors | join(", ") }}{% if item.reading %} · <span class="chip reading">Reading</span>{% endif %}</div>
     {% if item.summary %}<div class="item-summary">{{ item.summary | truncate(180) }}</div>{% elif not compact %}<div class="item-summary faint">No summary yet.</div>{% endif %}
     {% if item.flags %}<div class="chips" style="margin-top: 8px">{% for f in item.flags %}<span class="chip flag{{ ' error' if f == 'tagging_failed' }}">{{ f | flag }}</span>{% endfor %}</div>{% endif %}
   </td>
-  {% if "source" in columns %}<td class="small">{{ item.source_type | capitalize }}</td>{% endif %}
+  {% if "source" in columns %}<td class="small">{{ item.via | via }}</td>{% endif %}
+  {% if "type" in columns %}<td class="small">{{ item.source_type | kind }}</td>{% endif %}
   {% if "themes" in columns %}<td>{% if item.theme_tags %}<div class="chips">{% for t in item.theme_tags %}<span class="chip theme">{{ t }}</span>{% endfor %}</div>{% else %}<span class="small faint">None</span>{% endif %}</td>{% endif %}
   {% if "narratives" in columns %}<td>{% if item.narrative_tags %}<div class="chips">{% for n in item.narrative_tags %}<span class="chip narrative">{{ n }}</span>{% endfor %}</div>{% else %}<span class="small faint">None</span>{% endif %}</td>{% endif %}
   {% if "people" in columns %}<td class="small">{{ item.authors | join(", ") }}</td>{% endif %}

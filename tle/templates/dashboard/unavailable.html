@@ -1,0 +1,19 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Can't reach the database{% endblock %}
+{% block body %}
+<div class="login-wrap">
+<div class="login">
+  {% if company %}<p class="eyebrow">{{ company }}</p>{% endif %}
+  <h1>The dashboard can't reach its database</h1>
+  <div class="panel">
+    <p style="margin: 0">So nothing can be shown or saved right now. The database said:</p>
+    <pre class="code" style="white-space: pre-wrap; background: var(--surface-2); padding: 12px 14px; border-radius: var(--radius-card); margin: 12px 0">{{ reason }}</pre>
+    <ul class="small muted" style="margin: 0; padding-left: 18px">
+      <li>Run the deploy's check (the command it printed at the end) for what to fix.</li>
+      <li>"password authentication failed": rerunning the deploy makes the database user match its secret.</li>
+      <li>If it was only just deployed, the database may still be starting: reload in a minute.</li>
+    </ul>
+  </div>
+</div>
+</div>
+{% endblock %}

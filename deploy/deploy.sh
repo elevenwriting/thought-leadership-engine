@@ -41,6 +41,26 @@ DB_USER=tle
 SECRET_KEYS=(TLE_API_TOKEN ANTHROPIC_API_KEY ANTHROPIC_WORKSPACE_ID OPENAI_API_KEY GEMINI_API_KEY
              SLACK_BOT_TOKEN SLACK_SIGNING_SECRET CLICKUP_API_TOKEN)
 
+# Who may open the dashboard, checked now rather than after the slow steps.
+if [[ -n "$DASHBOARD_ACCESS" ]]; then
+  IFS=',' read -ra MEMBERS <<< "$DASHBOARD_ACCESS"
+  for member in "${MEMBERS[@]}"; do
+    member=$(printf '%s' "$member" | tr '[:upper:]' '[:lower:]')
+    if ! [[ "$member" =~ ^domain:[a-z0-9.-]+\.[a-z]{2,}$ || "$member" =~ ^(user|group):[^@[:space:]]+@[a-z0-9.-]+\.[a-z]{2,}$ ]]; then
+      echo "DASHBOARD_ACCESS has \"$member\", which isn't domain:yourcompany.com, group:team@yourcompany.com or"
+      echo "user:name@yourcompany.com. Separate several with commas, no spaces."
+      exit 1
+    fi
+    # A Google Workspace domain receives mail, so one with no mail servers is most likely a typo.
+    domain=${member#*:}; domain=${domain#*@}
+    if command -v dig >/dev/null && [[ -z "${ACCESS_UNCHECKED:-}" ]] && [[ -z "$(dig +short MX "$domain")" ]]; then
+      echo "$domain has no mail servers, so it doesn't look like a Google Workspace domain. Check the"
+      echo "spelling in DASHBOARD_ACCESS (or set ACCESS_UNCHECKED=1 to go ahead anyway)."
+      exit 1
+    fi
+  done
+fi
+
 gcloud config set project "$PROJECT" >/dev/null
 CLOUD_SQL=""
 [[ -z "${DATABASE_URL:-}" ]] && CLOUD_SQL=1
@@ -48,7 +68,7 @@ CLOUD_SQL=""
 echo "==> Enabling APIs"
 APIS=(run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com
       drive.googleapis.com cloudscheduler.googleapis.com gmail.googleapis.com iamcredentials.googleapis.com
-      iap.googleapis.com)
+      iap.googleapis.com cloudresourcemanager.googleapis.com)
 ROLES=(roles/secretmanager.secretAccessor roles/run.invoker)
 [[ -n "$CLOUD_SQL" ]] && APIS+=(sqladmin.googleapis.com) && ROLES+=(roles/cloudsql.client)
 gcloud services enable "${APIS[@]}"
@@ -120,17 +140,24 @@ else
   gcloud sql databases describe "$DB_NAME" --instance "$SQL_INSTANCE" >/dev/null 2>&1 || \
     gcloud sql databases create "$DB_NAME" --instance "$SQL_INSTANCE"
   CONNECTION=$(gcloud sql instances describe "$SQL_INSTANCE" --format 'value(connectionName)')
-  if ! gcloud secrets describe tle-database-url >/dev/null 2>&1; then
+  # The password lives in the tle-database-url secret. The user is made to match it on every run,
+  # so a database created after the secret (say, after an earlier attempt failed) still works.
+  if gcloud secrets describe tle-database-url >/dev/null 2>&1; then
+    DB_PASSWORD=$(gcloud secrets versions access latest --secret tle-database-url | sed -E 's#^postgresql://[^:]+:([^@]*)@.*#\1#')
+  else
     DB_PASSWORD=$(openssl rand -hex 24)
-    if gcloud sql users list --instance "$SQL_INSTANCE" --format 'value(name)' | grep -qx "$DB_USER"; then
-      gcloud sql users set-password "$DB_USER" --instance "$SQL_INSTANCE" --password "$DB_PASSWORD"
-    else
-      gcloud sql users create "$DB_USER" --instance "$SQL_INSTANCE" --password "$DB_PASSWORD"
-    fi
-    # Cloud Run reaches the instance through a socket under /cloudsql.
-    printf '%s' "postgresql://${DB_USER}:${DB_PASSWORD}@/${DB_NAME}?host=/cloudsql/${CONNECTION}" | \
-      gcloud secrets create tle-database-url --data-file=- --replication-policy=automatic >/dev/null
   fi
+  if gcloud sql users list --instance "$SQL_INSTANCE" --format 'value(name)' | grep -qx "$DB_USER"; then
+    gcloud sql users set-password "$DB_USER" --instance "$SQL_INSTANCE" --password "$DB_PASSWORD" >/dev/null
+  else
+    gcloud sql users create "$DB_USER" --instance "$SQL_INSTANCE" --password "$DB_PASSWORD" >/dev/null
+  fi
+  # Cloud Run reaches the instance through a socket under /cloudsql.
+  DB_URL="postgresql://${DB_USER}:${DB_PASSWORD}@/${DB_NAME}?host=/cloudsql/${CONNECTION}"
+  if [[ "$(gcloud secrets versions access latest --secret tle-database-url 2>/dev/null)" != "$DB_URL" ]]; then
+    store_secret tle-database-url "$DB_URL"
+  fi
+  unset DB_PASSWORD DB_URL
   SECRET_FLAGS+=("DATABASE_URL=tle-database-url:latest")
   SERVICE_SQL=(--add-cloudsql-instances "$CONNECTION")
   JOB_SQL=(--set-cloudsql-instances "$CONNECTION")
@@ -196,9 +223,15 @@ if [[ "$DASHBOARD" == "1" ]]; then
   if [[ -n "$DASHBOARD_ACCESS" ]]; then
     IFS=',' read -ra MEMBERS <<< "$DASHBOARD_ACCESS"
     for member in "${MEMBERS[@]}"; do
-      gcloud iap web add-iam-policy-binding --resource-type=cloud-run --service "$DASHBOARD_SERVICE" \
-        --region "$REGION" --member "$member" --role roles/iap.httpsResourceAccessor >/dev/null
-      echo "    $member can open the dashboard"
+      # A typo here (a domain that doesn't exist) is reported, and the rest still finishes.
+      if error=$(gcloud iap web add-iam-policy-binding --resource-type=cloud-run --service "$DASHBOARD_SERVICE" \
+          --region "$REGION" --member "$member" --role roles/iap.httpsResourceAccessor 2>&1 >/dev/null); then
+        echo "    $member can open the dashboard"
+      else
+        echo "    Couldn't give $member access: ${error##*: }"
+        NOTES+=("Dashboard: $member couldn't be given access (${error##*: }). Check the spelling and rerun"
+                "  with the right DASHBOARD_ACCESS, or add people in the IAP console.")
+      fi
     done
   else
     NOTES+=("Dashboard: nobody can open it yet. Rerun with DASHBOARD_ACCESS=domain:yourcompany.com,"

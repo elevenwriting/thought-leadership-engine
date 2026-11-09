@@ -37,7 +37,7 @@
   <label for="pn" style="margin-top: 0">Name <span class="hint">renaming updates their items</span></label><input id="pn" name="name" value="{{ person.name }}" required>
   <label for="pr">Role</label><input id="pr" name="role" value="{{ person.role }}">
   <label for="pe">Emails</label><input id="pe" name="emails" value="{{ person.emails | join(', ') }}">
-  <label for="ps">Slack member ID</label><input id="ps" name="slack_id" value="{{ person.slack_id }}">
+  <label for="ps">Slack member ID <span class="hint">optional: found from their email when you save</span></label><input id="ps" name="slack_id" value="{{ person.slack_id }}">
   <label for="pa">Other spellings</label><input id="pa" name="aliases" value="{{ person.aliases | join(', ') }}">
   <label for="pf">Responsible for</label><input id="pf" name="responsible_for" value="{{ person.responsible_for | join(', ') }}">
   <label class="check" style="margin-top: 18px"><input type="checkbox" name="active" {% if person.active %}checked{% endif %}> Still at the company</label>

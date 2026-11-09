@@ -13,6 +13,8 @@ from typing import Any
 
 # Each provider's starting model, for tagging and for audio. Changed under Models in Settings.
 MODELS = {"anthropic": "claude-sonnet-5-5", "openai": "gpt-5", "gemini": "gemini-2.5-flash"}
+# Cheaper models for quick jobs, such as finding the topics in a chat session.
+FAST_MODELS = {"anthropic": "claude-haiku-5-5", "openai": "gpt-5-mini", "gemini": "gemini-2.5-flash-lite"}
 AUDIO_MODELS = {"openai": "gpt-4o-transcribe", "gemini": "gemini-2.5-flash"}
 KEYS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
 
@@ -48,7 +50,6 @@ _DEFAULTS: dict[str, Any] = {
         "files": {"pdf_fallback": "llm", "min_chars_per_page": 100, "pages_per_call": 8, "max_pdf_pages": 50},
         "links": {"render": "auto", "min_chars": 400, "timeout_seconds": 30},
     },
-    "branding": {},
 }
 
 
@@ -60,6 +61,7 @@ def defaults() -> dict[str, Any]:
     have = [p for p in KEYS if os.environ.get(KEYS[p])]
     provider = have[0] if have else "anthropic"
     data["llm"] = {"provider": provider, "model": MODELS[provider], "max_input_chars": 150_000}
+    data["fast"] = {"provider": provider, "model": FAST_MODELS[provider]}
     audio = next((p for p in have if p in AUDIO_MODELS), None)
     data["transcription"] = {"provider": audio, "model": AUDIO_MODELS[audio]} if audio else None
     return data

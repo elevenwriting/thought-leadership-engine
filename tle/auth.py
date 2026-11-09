@@ -8,8 +8,8 @@ in the IAP console). The app checks IAP's signed header against Google's keys an
 For development, TLE_DEV_USER (an email address) stands in for a signed-in person. It's
 refused on Cloud Run, so it can never be switched on there.
 
-The API token (TLE_API_TOKEN) is separate: it's how Slack, ChatGPT, scripts and MCP clients
-call the API.
+The API token (TLE_API_TOKEN) is separate: it's how MCP clients, ChatGPT and scripts call the
+API. Slack's messages are checked with its signing secret instead.
 """
 
 from __future__ import annotations

@@ -15,12 +15,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import analytics, auth, dashboard, events, items, playbooks
-from . import settings as settings_store
+from . import analytics, auth, dashboard, events, items, playbooks, topics
 from .config import get_config
 from .connectors import slack as slack_connector
 from .attribution import attribute
@@ -68,7 +67,7 @@ _mcp, _mcp_asgi = _mcp_app()
 async def lifespan(app: FastAPI):
     """Tables and first settings are made when the service starts, so there's no setup step."""
     try:
-        settings_store.prepare(get_store())
+        get_store()  # makes the tables and first settings if they're missing
     except Exception:  # noqa: BLE001
         # Don't stop the service starting: pages say what's wrong, and the next request retries.
         logging.getLogger(__name__).exception("Couldn't prepare the database on start")
@@ -105,6 +104,28 @@ class _McpWithoutSlash:
 
 
 app.add_middleware(_McpWithoutSlash)
+
+
+def _database_errors() -> tuple[type[Exception], ...]:
+    import sqlite3
+
+    import psycopg
+
+    return (psycopg.Error, sqlite3.Error)
+
+
+async def _database_unavailable(request: Request, exc: Exception):
+    """The database can't be reached (or its tables can't be used): say so plainly, rather than
+    a bare server error."""
+    reason = str(exc).strip().splitlines()[-1][:300] if str(exc).strip() else type(exc).__name__
+    logging.getLogger(__name__).exception("Database error on %s", request.url.path)
+    if request.url.path.startswith("/dashboard") or request.url.path.startswith("/ingest"):
+        return dashboard.unavailable_page(request, reason)
+    return JSONResponse({"detail": f"The database can't be reached: {reason}"}, status_code=503)
+
+
+for _error in _database_errors():
+    app.add_exception_handler(_error, _database_unavailable)
 
 
 @app.exception_handler(dashboard.SignInRequired)
@@ -235,9 +256,10 @@ def health() -> dict:
 
 
 def _save(item: Item, request: Request) -> dict:
-    store = get_store()
+    store, who = get_store(), _who(request)
+    item.via = who["via"]
     store.insert(item)
-    events.item_saved(store, item, **_who(request))
+    events.item_saved(store, item, **who)
     return item.to_result(include_text=False)
 
 
@@ -341,7 +363,10 @@ def search_items(
     themes: list[str] | None = Query(None, description="Any of these themes."),
     narratives: list[str] | None = Query(None, description="Any of these narratives."),
     authors: list[str] | None = Query(None),
-    source_types: list[str] | None = Query(None),
+    source_types: list[str] | None = Query(None, description="Kinds of content: linkedin, meeting, document..."),
+    sources: list[str] | None = Query(None, description="Ways in: slack, clickup, email, drive, web, api, mcp."),
+    include_reading: bool = Query(False, description="Also return reading: other people's content the team "
+                                  "shared without comment. It's never the company's view."),
     visibility: str | None = Query(None, description="public or private. Leave out to get both."),
     status: str | None = Query(None),
     date_from: datetime | None = None,
@@ -352,21 +377,35 @@ def search_items(
 ) -> dict:
     """Find captured items. Private items are returned with a private_flag: use them to
     inform content, but don't quote or publish them without the author's approval."""
-    items = get_store().search(SearchQuery(
+    store = get_store()
+    items = store.search(SearchQuery(
         text=text, themes=_split(themes), narratives=_split(narratives), authors=_split(authors),
-        source_types=_split(source_types), visibility=visibility, status=status,
-        date_from=date_from, date_to=date_to, limit=limit, offset=offset,
+        source_types=_split(source_types), vias=_split(sources), reading=None if include_reading else False,
+        visibility=visibility, status=status, date_from=date_from, date_to=date_to, limit=limit, offset=offset,
     ))
-    return {"count": len(items), "items": [i.to_result(include_text=include_text, max_text_chars=20_000) for i in items]}
+    return {"count": len(items),
+            "items": topics.results(items, store, include_text=include_text, max_text_chars=20_000)}
 
 
 @app.get("/items/{row_id}", dependencies=[Depends(require_token)], operation_id="getItem")
 def get_item(row_id: str) -> dict:
-    """One item with its full text."""
-    item = get_store().get(row_id)
+    """One item with its full text. A chat session also lists its topics, each with the messages it
+    covers (as #numbers in the text) and the chain it's on: the same work in other sessions."""
+    store = get_store()
+    item = store.get(row_id)
     if not item:
         raise HTTPException(404, "No item with that ID.")
-    return item.to_result()
+    return topics.result(item, store)
+
+
+@app.get("/topics/{topic_id}/chain", dependencies=[Depends(require_token)], operation_id="getChain")
+def get_chain(topic_id: str) -> dict:
+    """A chat topic and every topic linked to it (the same piece of work picked up in other
+    sessions), oldest first, each with its messages and citation."""
+    try:
+        return {"chain": topics.chain_result(topic_id, get_store())}
+    except KeyError:
+        raise HTTPException(404, "No topic with that ID.")
 
 
 @app.patch("/items/{row_id}", dependencies=[Depends(require_token)], operation_id="updateItem")

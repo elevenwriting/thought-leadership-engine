@@ -3,7 +3,7 @@
 {% block body %}
 <div class="login-wrap">
 <div class="login">
-  <p class="eyebrow">{{ company }}</p>
+  {% if company %}<p class="eyebrow">{{ company }}</p>{% endif %}
   <h1>Signing in</h1>
   <p class="lead" style="margin-bottom: 28px">To the Expertise Database: everything your team has said, tagged and ready to use.</p>
   <div class="panel">

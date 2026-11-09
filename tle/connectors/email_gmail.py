@@ -62,7 +62,7 @@ def poll(config: Config, store: Store) -> dict:
     settings = config.sources.get("email", {}).get("gmail", {})
     inbox = settings.get("inbox")
     if not inbox:
-        log.info("No inbox set under Email in Settings, so there's nothing to read.")
+        log.info("No inbox set under Email on Sources, so there's nothing to read.")
         return {"saved_emails": 0, "items": 0, "rejected": 0}
     processed = settings.get("processed_label", "tle-saved")
     rejected = settings.get("rejected_label", "tle-rejected")
