@@ -25,6 +25,7 @@
           {%- if key == "items" and unread %} <span class="count problem" title="Problems">{{ unread }}</span>{% endif %}
           {%- if key == "items" and review_count %} <span class="count review" title="Needs review">{{ review_count }}</span>{% endif %}</a>
       {% endfor %}
+      <span class="nav-slide" aria-hidden="true"></span>
     </nav>
     {% else %}
     <span style="flex: 1"></span>
@@ -64,6 +65,27 @@
 </footer>
 </div>
 <script>
+  // The menu's highlight glides to the link under the mouse, and back to the current page after.
+  (() => {
+    const nav = document.querySelector("nav.main"), slide = nav?.querySelector(".nav-slide");
+    if (!slide) return;
+    const current = nav.querySelector('a[aria-current="page"]');
+    const place = (link) => {
+      if (!link) { slide.style.opacity = "0"; return; }
+      slide.style.width = `${link.offsetWidth}px`;
+      slide.style.transform = `translateX(${link.offsetLeft}px)`;
+      slide.style.opacity = "1";
+    };
+    nav.classList.add("sliding");
+    place(current);
+    requestAnimationFrame(() => nav.classList.add("ready"));
+    nav.querySelectorAll("a").forEach((a) => { a.addEventListener("mouseenter", () => place(a)); a.addEventListener("focus", () => place(a)); });
+    nav.addEventListener("mouseleave", () => place(current));
+    nav.addEventListener("focusout", (e) => { if (!nav.contains(e.relatedTarget)) place(current); });
+    addEventListener("resize", () => place(current));
+    document.fonts?.ready.then(() => { if (!nav.matches(":hover")) place(current); });  // widths change once Inter loads
+  })();
+
   // Light or dark: the switch in the header overrides the operating system's, and is remembered.
   document.querySelector(".theme-toggle")?.addEventListener("click", () => {
     const root = document.documentElement;
