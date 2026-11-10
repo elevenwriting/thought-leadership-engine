@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploys the engine to Google Cloud: the API on Cloud Run, a Cloud SQL Postgres database, the
-# keys in Secret Manager, scheduled jobs for the email inbox, Drive and ClickUp, and the
+# keys in Secret Manager, scheduled jobs for the email inbox, Drive, ClickUp and Slack, and the
 # dashboard as a second service behind Google sign-in (IAP).
 #
 #   PROJECT=your-gcp-project DASHBOARD_ACCESS=domain:acme.com ./deploy/deploy.sh
@@ -28,6 +28,7 @@ SA_NAME="${SA_NAME:-tle-runner}"
 SA="${SA_NAME}@${PROJECT}.iam.gserviceaccount.com"
 DRIVE_SCHEDULE="${DRIVE_SCHEDULE:-0 * * * *}"    # hourly; set to "" to skip the Drive job
 CLICKUP_SCHEDULE="${CLICKUP_SCHEDULE:-*/15 * * * *}"  # every 15 minutes; set to "" to skip the ClickUp job
+SLACK_SCHEDULE="${SLACK_SCHEDULE:-*/15 * * * *}"      # every 15 minutes, for Slack channels saved as sessions; "" to skip
 EMAIL_SCHEDULE="${EMAIL_SCHEDULE:-*/5 * * * *}"  # every 5 minutes; set to "" to skip the email job
 DASHBOARD="${DASHBOARD:-1}"
 DASHBOARD_SERVICE="${SERVICE}-dashboard"
@@ -207,6 +208,7 @@ fi
 [[ -n "$DRIVE_SCHEDULE" ]] && scheduled_job drive-sync sync-drive "$DRIVE_SCHEDULE"
 NOTES+=("Drive (optional): share each folder with $SA (Viewer), then pick it in Settings.")
 [[ -n "$CLICKUP_SCHEDULE" ]] && scheduled_job clickup-sync sync-clickup "$CLICKUP_SCHEDULE"
+[[ -n "$SLACK_SCHEDULE" ]] && scheduled_job slack-sync sync-slack "$SLACK_SCHEDULE"
 
 if [[ "$DASHBOARD" == "1" ]]; then
   echo "==> Dashboard ($DASHBOARD_SERVICE, behind IAP)"

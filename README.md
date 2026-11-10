@@ -134,8 +134,8 @@ and, if there's no model key at all, asks which AI to use (Claude, OpenAI or Gem
 key. A new installation starts on that provider, with audio on if it's OpenAI or Gemini. It creates a small Cloud SQL
 Postgres instance (`db-f1-micro`, about the cheapest there is; set `DB_TIER` for a bigger
 one, or pass `DATABASE_URL` to use your own Postgres) and deploys the service, which creates
-its tables when it starts. It schedules the email (every 5 minutes), Drive (hourly) and
-ClickUp (every 15 minutes) jobs, which do nothing until you set those up on Sources. It
+its tables when it starts. It schedules the email (every 5 minutes), Drive (hourly),
+ClickUp and Slack (every 15 minutes) jobs, which do nothing until you set those up on Sources. It
 deploys the dashboard as a second service behind IAP, open to `DASHBOARD_ACCESS` (`domain:`,
 `group:` or `user:`, comma-separated). The main service stays open for MCP clients, ChatGPT and
 scripts, which use the API token, and for Slack, whose messages are checked with its signing secret. Last, it runs `tle check` on Cloud Run and prints how to read the
@@ -150,28 +150,28 @@ then rerun. Keys already in Secret Manager are kept.
 | Way in | Set up |
 | --- | --- |
 | **Web form** | Open `/ingest` on the dashboard or the service. Paste text, upload a file or share a link, with an optional note ("Jane's take on pricing") and author. **Preview** shows how it's been read: the author (worked out from the content if you left it blank), date, source, visibility, label, live citation, summary, themes, narratives and full text, all editable. **Save** stores exactly what's on screen. On the service itself (outside the dashboard), enter the API token once per browser. |
-| **Slack bot** | Create an app from [`deploy/slack-manifest.yaml`](deploy/slack-manifest.yaml) with the deploy's Slack events address, pass its bot token and signing secret to the deploy (`SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`), and then pick each channel under Slack on Sources. Every public channel is listed, and the bot joins the ones you pick when you save; private channels are listed once someone invites the bot (`/invite`). Speakers are matched to People by their Slack ID, or by the email on their Slack profile, so Slack IDs needn't be typed in: saving a person with an email fills it in. If the app was created before `channels:join` or `users:read.email` was in the manifest, add those scopes under OAuth & Permissions and reinstall it. Each channel has its own rules. In `reaction` mode (default), a message is saved when someone reacts with the channel's emoji (📍 `:round_pushpin:` unless you pick another). In `all` mode, every message in the channel is saved. With `include_threads` (default), a thread is saved as one item, the parent plus every reply with each speaker named, and it's rebuilt and re-tagged as the thread grows. With `include_files` (default), files shared in those messages (documents, PDFs, images, voice clips) are saved as items of their own, with the message as a note. With `include_links` (default), linked pages are read; see [Shared links](#shared-links) for what's kept. LinkedIn often hides posts from logged-out visitors, so those may fail and show as a problem on the dashboard. |
+| **Slack** | Create an app from [`deploy/slack-manifest.yaml`](deploy/slack-manifest.yaml) with the deploy's Slack events address, pass its bot token and signing secret to the deploy (`SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`), and then pick each channel under Slack on Sources. Every public channel is listed, and the bot joins the ones you pick when you save; private channels are listed once someone invites the bot (`/invite`). Speakers are matched to People by their Slack ID, or by the email on their Slack profile, so Slack IDs needn't be typed in: saving a person with an email fills it in. If the app was created before `channels:join` or `users:read.email` was in the manifest, add those scopes under OAuth & Permissions and reinstall it. Each channel saves every message as sessions or reacted messages, exactly as ClickUp Chat does: see [Chat channels](#chat-channels). Files shared in those messages (documents, PDFs, images, voice clips) are saved as items of their own, with the message as a note (*Save shared files*). LinkedIn often hides posts from logged-out visitors, so those may fail and show as a problem on the dashboard. |
 | **Email** | A dedicated inbox (e.g. `ideas@yourcompany.com`) that people send or forward things to. It's a Google Workspace mailbox, read every 5 minutes by a scheduled job; see [Email inbox](#email-inbox) below. Authors come from fields at the top of the body (`Author:`, `Date:`, `Type:`…) or, without them, are worked out by the LLM, since the sender may be sending in someone else's work. Each attachment becomes its own item, and a subject like `meeting: Q3 all-hands` sets the source type. Mail from senders who aren't allowed is filed as rejected. |
 | **Drive** | Share each folder with the service account, then pick it under Google Drive on Sources, with the kinds of content it holds (e.g. your Meet transcripts folder as `meeting`), an optional visibility, and whether to include subfolders. Sources lists every folder shared with the service account. Authors are worked out the same way as for email (fields at the top of the file, else the LLM, else the file owner flagged for review), because the owner of a Meet transcript is just whoever organised the meeting. Read hourly: new files are saved once, and a file edited since it was saved is read and tagged again once it's been left alone for half an hour, keeping its status, visibility, deliverables and authors. |
-| **ClickUp** | Pass a personal API token from a dedicated ClickUp user to the deploy (`CLICKUP_API_TOKEN`), then pick spaces, folders or lists and Chat channels under ClickUp on Sources, each with its own rules. Read every 15 minutes. Tasks with the place's tag (`ingest` unless changed) are saved with their comment thread, and rebuilt as comments are added; Docs in the place can be saved too, and are updated as they change. Chat is saved as sessions or by reaction: see [ClickUp Chat](#clickup-chat). Attachments become items of their own. |
+| **ClickUp** | Pass a personal API token from a dedicated ClickUp user to the deploy (`CLICKUP_API_TOKEN`), then pick spaces, folders or lists and Chat channels under ClickUp on Sources, each with its own rules. Read every 15 minutes. Tasks with the place's tag (`ingest` unless changed) are saved with their comment thread, and rebuilt as comments are added; Docs in the place can be saved too, and are updated as they change. Chat channels are saved as sessions or by reaction: see [Chat channels](#chat-channels). Attachments become items of their own. |
 | **Links** | Share a URL in the web form ("Share a link"), in an email, or with `tle ingest --url`. The page is fetched and its main content pulled out, dropping menus and footers, and pages that build their content with JavaScript are rendered in a headless browser first. Links to PDFs and other files are read like uploads. The page's byline helps work out the author. Shared links default to source type `web` (public), or `linkedin` for linkedin.com. Addresses on private or internal networks are refused. |
 | **Claude / ChatGPT** | Both can save items when you ask ("save this as a braindump from Jane"). |
 | **API / scripts** | `POST /ingest` with JSON, or `POST /ingest/file` with a file. Send `Authorization: Bearer $TLE_API_TOKEN`. Docs at `/docs`. |
 
-Email, Drive and ClickUp are read on a schedule. Sources shows when each was last read and what
-it found, and **Read now** reads one straight away (`tle sync-email`, `tle sync-drive` and
-`tle sync-clickup` do the same from a terminal). After each run, new items are linked to related
+Email, Drive, ClickUp and Slack's session channels are read on a schedule. Sources shows when
+each was last read and what it found, and **Read now** reads one straight away (`tle sync-email`,
+`tle sync-drive`, `tle sync-clickup` and `tle sync-slack` do the same from a terminal). After each run, new items are linked to related
 ones from other sources (see [Related items](#related-items)).
 
-### ClickUp Chat
+### Chat channels
 
-Each channel is saved in one of two ways:
+Slack channels and ClickUp Chat channels work the same way. Each is saved in one of two ways:
 
 - **As sessions** (every message). The channel is split wherever it went quiet for 4 hours (or
   the channel's own gap), and each session is saved as one item once it's ended: its messages
   numbered, with thread replies under them. A late reply rebuilds its session.
 - **Reacted messages.** A message someone reacts to with the channel's emoji is saved with its
-  replies, as in Slack.
+  replies (Slack's as soon as the reaction is added; ClickUp's on the next read).
 
 Nothing posted before a channel's *Starting from* date is saved (it defaults to the day the
 channel is added); an earlier date reads its history, a batch of sessions per run. Changing a
@@ -193,7 +193,8 @@ quote the messages, not the view.
 
 Docs shared in a channel are read as described in [Shared links](#shared-links). A link is read
 when its session is saved, so one posted in a busy channel appears once the channel has been
-quiet for the gap. ClickUp marks its Chat API as experimental, so Chat may need fixes if ClickUp
+quiet for the gap. Slack's sessions are read every 15 minutes from the channel's history, so the
+app's message events only matter for reactions. ClickUp marks its Chat API as experimental, so Chat may need fixes if ClickUp
 changes it.
 
 ### Meeting notes and transcripts

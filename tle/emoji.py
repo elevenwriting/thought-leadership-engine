@@ -59,3 +59,25 @@ EMOJI = {
     "large_yellow_circle": "🟡",
     "red_circle": "🔴",
 }
+
+# More of what people write in chat, for turning :codes: in Slack messages into emoji. Not offered
+# in the reaction picker. A code that isn't here is left as it was written.
+CHAT = {
+    **EMOJI,
+    "joy": "😂", "rofl": "🤣", "smile": "😄", "smiley": "😃", "grinning": "😀", "grin": "😁", "laughing": "😆",
+    "sweat_smile": "😅", "slightly_smiling_face": "🙂", "upside_down_face": "🙃", "wink": "😉", "blush": "😊",
+    "innocent": "😇", "heart_eyes": "😍", "star-struck": "🤩", "thinking_face": "🤔", "face_with_monocle": "🧐",
+    "neutral_face": "😐", "expressionless": "😑", "unamused": "😒", "roll_eyes": "🙄", "grimacing": "😬",
+    "relieved": "😌", "pensive": "😔", "confused": "😕", "worried": "😟", "slightly_frowning_face": "🙁",
+    "open_mouth": "😮", "astonished": "😲", "flushed": "😳", "pleading_face": "🥺", "cry": "😢", "sob": "😭",
+    "scream": "😱", "rage": "😡", "exploding_head": "🤯", "partying_face": "🥳", "sunglasses": "😎",
+    "nerd_face": "🤓", "skull": "💀", "see_no_evil": "🙈", "muscle": "💪", "pray": "🙏", "clap": "👏",
+    "wave": "👋", "ok_hand": "👌", "thumbsup": "👍", "thumbsdown": "👎", "-1": "👎", "raised_hands": "🙌",
+    "point_up": "☝️", "point_right": "👉", "point_down": "👇", "crossed_fingers": "🤞", "handshake": "🤝",
+    "white_check_mark": "✅", "heavy_check_mark": "✔️", "x": "❌", "warning": "⚠️", "question": "❓",
+    "exclamation": "❗", "zap": "⚡", "boom": "💥", "coffee": "☕", "party_popper": "🎉", "trophy": "🏆",
+    "chart_with_upwards_trend": "📈", "chart_with_downwards_trend": "📉", "calendar": "📆", "email": "📧",
+    "phone": "📱", "computer": "💻", "lock": "🔒", "key": "🔑", "gear": "⚙️", "wrench": "🔧", "hourglass": "⌛",
+    "skin-tone-2": "🏻", "skin-tone-3": "🏼", "skin-tone-4": "🏽", "skin-tone-5": "🏾", "skin-tone-6": "🏿",
+    "sunny": "☀️", "rainbow": "🌈", "heart_on_fire": "❤️‍🔥", "broken_heart": "💔", "sparkling_heart": "💖",
+}

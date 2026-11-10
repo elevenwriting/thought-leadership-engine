@@ -1139,7 +1139,8 @@ async def _save(request: Request, page: str) -> Response:
 
 # What happens after saving a source: when it's next read. Saving doesn't start a scan.
 WHEN_READ = {
-    "slack": "Saved. New messages and reactions in these channels are saved as they happen; earlier ones aren't read.",
+    "slack": "Saved. Channels saving every message are read every 15 minutes, as sessions, from their Starting from "
+             "date; reacted messages are saved as they happen.",
     "drive": "Saved. Drive is read every hour, including files already in the folder, and files edited since "
              "they were saved are read again.",
     "clickup": "Saved. ClickUp is read every 15 minutes: tagged tasks and Docs of any age, and Chat from the last week.",

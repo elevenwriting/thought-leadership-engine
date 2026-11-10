@@ -23,7 +23,8 @@ from .config import on_cloud_run
 log = logging.getLogger(__name__)
 
 # Source -> (Cloud Run job suffix, what it's called in messages)
-SOURCES = {"clickup": ("clickup-sync", "ClickUp"), "drive": ("drive-sync", "Drive"), "email": ("email-sync", "Email")}
+SOURCES = {"slack": ("slack-sync", "Slack"), "clickup": ("clickup-sync", "ClickUp"), "drive": ("drive-sync", "Drive"),
+           "email": ("email-sync", "Email")}
 # A run that hasn't finished after this long has died (a job's time limit is 30 minutes).
 STALE = timedelta(minutes=35)
 METADATA = "http://metadata.google.internal/computeMetadata/v1"
@@ -125,6 +126,11 @@ def _run_here(source: str) -> None:
 def sync(source: str, config, store) -> str:
     """One run of a source's sync, recorded; returns its summary. The CLI's sync commands use it."""
     def work() -> str:
+        if source == "slack":
+            from .connectors import slack
+
+            done = slack.sync(config, store)
+            return f"{done['sessions']} chat sessions saved or updated, {done['channels']} channels"
         if source == "clickup":
             from .connectors import clickup
 

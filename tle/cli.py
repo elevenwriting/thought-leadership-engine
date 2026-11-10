@@ -49,7 +49,8 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--label", help="Short label for citations, e.g. 'All-hands'")
 
     sub.add_parser("sync-drive", help="Ingest new files from the Drive folders chosen in Settings.")
-    sub.add_parser("sync-clickup", help="Ingest tagged tasks, Docs and reacted Chat messages from ClickUp.")
+    sub.add_parser("sync-clickup", help="Ingest tagged tasks, Docs and Chat channels from ClickUp.")
+    sub.add_parser("sync-slack", help="Read Slack channels set to save every message, as sessions.")
     sub.add_parser("sync-email", help="Ingest new mail from the inbox set in Settings.")
     sub.add_parser("relate", help="Link items saved since the last run to related ones from other sources.")
 
@@ -115,7 +116,7 @@ def main(argv: list[str] | None = None) -> None:
         else:
             sys.exit("Give a file, --text or --url.")
         _print(item.to_result(include_text=False))
-    elif args.command in ("sync-drive", "sync-clickup", "sync-email"):
+    elif args.command in ("sync-drive", "sync-clickup", "sync-email", "sync-slack"):
         from . import syncs
 
         print(syncs.sync(args.command.removeprefix("sync-"), config, store))

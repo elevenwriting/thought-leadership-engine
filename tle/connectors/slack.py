@@ -1,10 +1,12 @@
-"""Slack bot: saves messages from allowed channels, either every message or the ones
-someone reacts to with the configured emoji.
+"""Slack: the channels picked on Sources, each saved in one of two ways, exactly as ClickUp Chat.
 
-With include_threads on, a thread is saved as one item: the parent message and all its
-replies, in order, with each speaker named. Reacting to any message in a thread saves the
-whole thread. When the thread grows (a new reply in `all` mode, or another reaction), the
-item's text is rebuilt and tagged again.
+- `sessions` (every message): a scheduled job reads the channel's history and saves it as
+  sessions, split wherever the channel went quiet, with topics, chains and optional views. See
+  channel_sessions.py, which ClickUp uses too. The retired `all` mode is read as sessions.
+- `reaction`: the bot saves a message someone reacts to with the channel's emoji, as it
+  happens. With include_threads on, a thread is saved as one item: the parent message and all
+  its replies, in order, with each speaker named. Reacting to any message in a thread saves the
+  whole thread, and another reaction rebuilds it.
 
 Files shared in those messages (documents, PDFs, images, voice clips) are saved as items
 of their own, with the message they were posted with as a note. Turn this off with
@@ -33,17 +35,23 @@ from ..attribution import attribute, parse_fields
 from ..attribution import metadata as attribution_metadata
 from .. import events
 from ..config import Config
+from ..emoji import CHAT as CHAT_EMOJI
 from ..extract import extract_text, guess_mime
 from ..ingest import ingest_text, refresh_text
+from ..links import find_urls
 from ..settings_form import CHANNEL_DEFAULTS
+from . import channel_sessions, sessions
 from .shared import has_commentary, link_metadata, read_links, save_pages
 from ..store import Store
 
 log = logging.getLogger(__name__)
 
 MAX_FILE_BYTES = 25 * 1024 * 1024
+# Sessions saved per channel per run, so reading a long history never runs past the job's time limit.
+SESSIONS_PER_SYNC = 20
 MENTION = re.compile(r"<@([UW][A-Z0-9]+)(?:\|[^>]*)?>")
 SLACK_LINK = re.compile(r"<(https?://[^|>]+)(?:\|[^>]*)?>")
+EMOJI_CODE = re.compile(r":([a-z0-9_+-]+):")
 
 
 def verify(body: bytes, headers: dict) -> bool:
@@ -119,12 +127,20 @@ class _Names:
                 user = self.client.users_info(user=user_id)["user"]
                 email = (user.get("profile") or {}).get("email") or ""
                 person = self.config.person_by_email(email) if email else None
-                self.cache[user_id] = person.name if person else (user.get("real_name") or user.get("name") or user_id)
+                # People who've left keep their name only in their profile.
+                profile = user.get("profile") or {}
+                self.cache[user_id] = person.name if person else (
+                    user.get("real_name") or profile.get("real_name") or profile.get("display_name")
+                    or user.get("name") or user_id)
         return self.cache[user_id]
 
 
     def text(self, text: str) -> str:
-        return SLACK_LINK.sub(lambda m: m.group(1), MENTION.sub(lambda m: "@" + self(m.group(1)), text))
+        """Slack's markup as plain text: mentions as names, links as addresses, emoji codes as emoji,
+        and the &amp; &lt; &gt; Slack escapes back to & < >."""
+        text = SLACK_LINK.sub(lambda m: m.group(1), MENTION.sub(lambda m: "@" + self(m.group(1)), text))
+        text = EMOJI_CODE.sub(lambda m: CHAT_EMOJI.get(m.group(1), m.group(0)), text)
+        return text.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
 
 def member_id(email: str) -> str | None:
     """A person's Slack member ID from their email, or None if Slack doesn't know it (or the app
@@ -217,15 +233,8 @@ def handle_event(payload: dict, config: Config, store: Store) -> None:
             return
         channel, ts = event["item"].get("channel"), event["item"].get("ts")
         message = None
-    elif mode == "all" and event.get("type") == "message":
-        # Edits, deletions, joins and bot posts all arrive as subtypes.
-        if event.get("subtype") not in (None, "file_share", "thread_broadcast") or event.get("bot_id"):
-            return
-        if _is_reply(event) and not include_threads:
-            return
-        channel, ts, message = event.get("channel"), event.get("ts"), event
     else:
-        return
+        return  # every message is read from the channel's history by the scheduled job, as sessions
 
     client = _client()
     message = message or _fetch_message(client, channel, ts)
@@ -297,3 +306,103 @@ def handle_event(payload: dict, config: Config, store: Store) -> None:
         date_created=_when(root_ts), source_metadata=metadata,
     )
     log.info("Saved Slack item %s (%d messages)", row_id, len(messages))
+
+
+# --- Every message, as sessions (the scheduled job) ---------------------------------
+
+def _person(raw: dict) -> bool:
+    """A message a person wrote: not a bot's, a join or a channel event (those arrive as subtypes)."""
+    return bool(raw.get("user")) and not raw.get("bot_id") and raw.get("subtype") in (None, "file_share", "thread_broadcast")
+
+
+def _top_level(raw: dict) -> bool:
+    return _person(raw) and not _is_reply(raw)
+
+
+def _history(client: WebClient, channel: str, since: datetime) -> list[dict]:
+    """The channel's top-level messages posted at or after `since`, oldest first."""
+    found, cursor = [], None
+    while True:
+        page = client.conversations_history(channel=channel, oldest=f"{since.timestamp():.6f}", limit=200,
+                                            cursor=cursor)
+        found += [m for m in page["messages"] if _top_level(m)]
+        cursor = (page.get("response_metadata") or {}).get("next_cursor")
+        if not cursor:
+            return sorted(found, key=lambda m: float(m["ts"]))
+
+
+def _chat_channel(client: WebClient, entry: dict, rules: dict, names: "_Names", config: Config,
+                  store: Store) -> channel_sessions.Channel:
+    """A Slack channel, for saving as sessions (see channel_sessions.py)."""
+    channel = entry["id"]
+    name = entry.get("name") or client.conversations_info(channel=channel)["channel"].get("name", channel)
+    raws: dict[str, dict] = {}
+
+    def message(raw: dict, replies: list[sessions.Message] | None = None) -> sessions.Message:
+        raws[raw["ts"]] = raw
+        return sessions.Message(id=raw["ts"], who=names(raw["user"]), when=_when(raw["ts"]),
+                                text=names.text(raw.get("text") or "").strip(), replies=replies or [],
+                                reply_count=int(raw.get("reply_count") or 0))
+
+    def messages(since: datetime) -> list[sessions.Message]:
+        return [message(m) for m in _history(client, channel, since)]
+
+    def with_replies(top: sessions.Message) -> sessions.Message:
+        raw = raws[top.id]
+        replies = []
+        if raw.get("reply_count"):
+            replies = [message(r) for r in _fetch_thread(client, channel, raw["ts"]) if r["ts"] != raw["ts"] and _person(r)]
+        return message(raw, replies)
+
+    def url(first: sessions.Message) -> str:
+        try:
+            return client.chat_getPermalink(channel=channel, message_ts=first.id).get("permalink") or ""
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def links_only(shared: list, place: str, metadata: dict) -> bool:
+        commentary = has_commentary([text for text, _, _ in shared])
+        links = read_links(shared, via="slack", place=place, row_prefix=f"slack-link-{channel}", config=config,
+                           store=store, skip_saved=not commentary)
+        save_pages(links, commentary=commentary, via="slack", place=place, config=config, store=store,
+                   metadata={"channel_id": channel, "channel_name": name})
+        if not commentary and any(find_urls(text) for text, _, _ in shared):
+            return True
+        metadata.update(link_metadata(links))
+        return False
+
+    def files(session: list[sessions.Message]) -> None:
+        if not rules.get("include_files", True):
+            return
+        shared = [(raws[m.id], f) for top in session for m in [top, *top.replies]
+                  for f in raws[m.id].get("files", []) if f.get("url_private_download")]
+        if shared:
+            _save_files(shared, channel, name, names, config, store)
+
+    return channel_sessions.Channel(
+        source="slack", title="Slack", id=channel, name=name, rules=rules, messages=messages,
+        with_replies=with_replies, url=url, links_only=links_only, channel_key="channel_id", on_session=files)
+
+
+def sync(config: Config, store: Store, client: WebClient | None = None) -> dict[str, int]:
+    """Reads every channel set to save every message, as sessions. Reacted channels are saved as
+    reactions happen, so there's nothing to read for them here."""
+    entries = [e for e in config.sources.get("slack", {}).get("channels") or []
+               if e.get("id") and (e.get("mode") or "reaction") in ("sessions", "all")]
+    done = {"channels": 0, "sessions": 0}
+    if not entries:
+        return done
+    client = client or _client()
+    names = _Names(client, config)
+    for entry in entries:
+        rules = {**CHANNEL_DEFAULTS, **{k: v for k, v in entry.items() if v is not None}}
+        try:
+            done["sessions"] += channel_sessions.save(
+                _chat_channel(client, entry, rules, names, config, store),
+                channel_sessions.days(entry, 7), config, store, SESSIONS_PER_SYNC)
+            done["channels"] += 1
+        except Exception as exc:  # noqa: BLE001
+            log.exception("Couldn't read Slack channel %s", entry["id"])
+            events.problem(store, f"Couldn't read Slack channel #{entry.get('name') or entry['id']}: {exc}",
+                           via="slack", key=f"channel:{entry['id']}")
+    return done

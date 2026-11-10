@@ -44,8 +44,7 @@ from ..extract import extract_text, guess_mime
 from ..ingest import ingest_text, refresh_text
 from ..store import Store
 from ..links import find_urls
-from .. import topics, views
-from . import sessions
+from . import channel_sessions, sessions
 from .shared import has_commentary, link_metadata, read_links, save_pages
 
 log = logging.getLogger(__name__)
@@ -360,16 +359,7 @@ def _replies(client: ClickUp, team_id: str, message_id: str) -> list[dict]:
                   key=lambda m: int(m["date"]))
 
 
-def _channel_start(rules: dict) -> datetime | None:
-    """The earliest a message can be and still be saved: the Starting from date, or the moment
-    the channel's mode last changed, whichever is later."""
-    starts = []
-    if rules.get("from"):
-        starts.append(datetime.fromisoformat(str(rules["from"])).replace(tzinfo=timezone.utc))
-    if rules.get("since"):
-        since = datetime.fromisoformat(str(rules["since"]))
-        starts.append(since if since.tzinfo else since.replace(tzinfo=timezone.utc))
-    return max(starts) if starts else None
+_channel_start = channel_sessions.start
 
 
 def _save_channel(client: ClickUp, team_id: str, channel: dict, rules: dict, people: _People, days: int,
@@ -431,152 +421,38 @@ def _with_replies(client: ClickUp, team_id: str, raw: dict, people: _People) -> 
     return _message(raw, people, replies)
 
 
-def _session_item(session: list[sessions.Message], channel: dict, team_id: str, rules: dict, config: Config,
-                  store: Store) -> int | None:
-    """Saves a session, or rebuilds it if it was saved before. Returns how many messages it holds,
-    or None when there was nothing of the team's own to keep (only links, saved as reading)."""
-    name = channel.get("name") or channel["id"]
-    text, listed = sessions.transcript(session)
-    if not text:
-        return None
-    place = f"ClickUp #{name}"
-    first = session[0]
-    metadata = {
-        "label": f"#{name}", "title": sessions.title(name, session), "place": f"clickup:{channel['id']}",
-        "clickup_channel_id": channel["id"],
-        "channel_name": name, "session": True, "message_count": len(listed), "messages": listed,
-        "url": f"https://app.clickup.com/{team_id}/chat/r/{channel['id']}/t/{first.id}",
-        "first_message": first.when.isoformat(), "last_message": session[-1].when.isoformat(),
-        "views": bool(rules.get("views")),
-    }
-    row_id = f"clickup-session-{channel['id']}-{first.id}"
-    existing = store.get(row_id)
-    if existing and existing.extracted_text == text:
-        return len(listed)
-    if rules["include_links"]:
-        shared = [(m.text, m.who, m.when) for message in session for m in [message, *message.replies]]
-        if _links_only(shared, place, {"clickup_channel_id": channel["id"]}, metadata, config, store):
-            return None
-    authors = sessions.authors(session)
-    if existing:
-        # Its topics stay: they list top-level messages, and a new reply goes with its message.
-        metadata.pop("title")
-        refresh_text(existing, text, config=config, store=store, authors=authors, source_metadata=metadata,
-                     via="clickup")
-        log.info("Updated ClickUp session %s", row_id)
-    else:
-        item = ingest_text(text, config=config, store=store, row_id=row_id, source_type="clickup", via="clickup",
-                           authors=authors, visibility=rules.get("visibility") or None, date_created=first.when,
-                           source_metadata=metadata)
-        log.info("Saved ClickUp session %s (%d messages)", row_id, len(listed))
-        _find_topics(item, config, store)
-    return len(listed)
+_days = channel_sessions.days
 
 
-def _find_topics(item, config: Config, store: Store) -> None:
-    """Finds a session's topics, then its views if the channel asks for them. A failure keeps the
-    session, notes the error on it, and is tried again on later syncs."""
-    try:
-        topics.find(item, config, store)
-    except Exception as exc:  # noqa: BLE001
-        log.exception("Finding topics failed for %s", item.row_id)
-        _failed(item, "topics_error", f"Couldn't find the topics in {item.source_metadata.get('title')}", exc, store)
-        return
-    if views.wanted(item):
-        _pull_views(item, config, store)
+def _chat_channel(client: ClickUp, team_id: str, channel: dict, rules: dict, people: _People, config: Config,
+                  store: Store) -> channel_sessions.Channel:
+    """A ClickUp Chat channel, for saving as sessions (see channel_sessions.py)."""
+    raws: dict[str, dict] = {}
 
+    def messages(since: datetime) -> list[sessions.Message]:
+        found = []
+        for message in client.pages(f"/v3/workspaces/{team_id}/chat/channels/{channel['id']}/messages", limit=100):
+            if _when(message["date"]) < since:
+                break  # newest first
+            found.append(message)
+        found.reverse()
+        raws.update({str(m["id"]): m for m in found})
+        return [_message(m, people) for m in found]
 
-def _pull_views(item, config: Config, store: Store) -> None:
-    try:
-        views.pull(store.get(item.row_id) or item, config, store)
-    except Exception as exc:  # noqa: BLE001
-        log.exception("Pulling out views failed for %s", item.row_id)
-        _failed(item, "views_error", f"Couldn't pull out the views in {item.source_metadata.get('title')}", exc, store)
-
-
-def _failed(item, key: str, message: str, exc: Exception, store: Store) -> None:
-    current = store.get(item.row_id) or item
-    store.update(item.row_id, {"source_metadata": {**current.source_metadata, key: str(exc)[:500]}})
-    events.problem(store, f"{message}: {exc}", via="clickup", key=f"{key}:{item.row_id}", row_id=item.row_id)
-
-
-def _days(channel: dict, fallback: int) -> int:
-    try:
-        return int(float(channel.get("look_back_days") or fallback))
-    except (TypeError, ValueError):
-        return fallback
+    return channel_sessions.Channel(
+        source="clickup", title="ClickUp", id=channel["id"], name=channel.get("name") or channel["id"], rules=rules,
+        messages=messages, with_replies=lambda m: _with_replies(client, team_id, raws[m.id], people),
+        url=lambda first: f"https://app.clickup.com/{team_id}/chat/r/{channel['id']}/t/{first.id}",
+        links_only=lambda shared, place, metadata: _links_only(
+            shared, place, {"clickup_channel_id": channel["id"]}, metadata, config, store),
+        channel_key="clickup_channel_id")
 
 
 def _save_sessions(client: ClickUp, team_id: str, channel: dict, rules: dict, people: _People, days: int,
                    config: Config, store: Store) -> int:
-    """Saves the channel's sessions that have ended since the last one saved, oldest first and at
-    most SESSIONS_PER_SYNC at a time, and rebuilds recent ones whose threads have new replies.
-    Returns how many sessions were saved or rebuilt.
-
-    Progress is kept in the store under clickup-sessions:<channel id>: `cursor` is the last
-    top-level message in a saved session, and `recent` lists the sessions saved in the last
-    `days` days with each message's reply count, so new replies are noticed."""
-    key = f"clickup-sessions:{channel['id']}"
-    state = store.get_state(key) or {}
-    if state and state.get("added") != rules.get("added"):
-        # The channel was removed and added again: start over from its Starting from date. Sessions
-        # saved before are found by their row IDs, so none is saved twice.
-        log.info("Channel %s was added again; reading it from the start", channel["id"])
-        state = {}
-    state["added"] = rules.get("added")
-    now = datetime.now(timezone.utc)
-    start = _channel_start(rules)
-    if start is None:  # no Starting from date: from the first sync on
-        start = datetime.fromisoformat(state.get("start") or now.isoformat())
-        state["start"] = start.isoformat()
-    cursor = datetime.fromisoformat(state["cursor"]) if state.get("cursor") else None
-    recent = [r for r in state.get("recent") or [] if datetime.fromisoformat(r["last"]) > now - timedelta(days=days)]
-    new_from = max(start, cursor) if cursor else start
-    read_from = min([new_from, *(datetime.fromisoformat(r["first"]) for r in recent)])
-    read_from = max(read_from, start)
-
-    raw: list[dict] = []
-    for message in client.pages(f"/v3/workspaces/{team_id}/chat/channels/{channel['id']}/messages", limit=100):
-        if _when(message["date"]) < read_from:
-            break  # newest first
-        raw.append(message)
-    raw.reverse()
-    by_id = {str(m["id"]): m for m in raw}
-    done = 0
-
-    # Saved sessions whose threads have new replies are rebuilt, and ones whose topics couldn't be
-    # found are tried again.
-    for entry in recent:
-        saved = store.get(entry["row_id"]) if entry.get("row_id") else None
-        if saved and saved.source_metadata.get("topics_error"):
-            _find_topics(saved, config, store)
-        elif saved and saved.source_metadata.get("views_error"):
-            _pull_views(saved, config, store)
-        counts = entry.get("replies") or {}
-        found = [by_id.get(i) for i in entry["messages"]]
-        if any(m is None for m in found):
-            continue  # deleted messages, or older than this read: leave the session as it is
-        if all(int(m.get("replies_count") or 0) == counts.get(str(m["id"]), 0) for m in found):
-            continue
-        session = [_with_replies(client, team_id, m, people) for m in found]
-        if _session_item(session, channel, team_id, rules, config, store) is not None:
-            done += 1
-        entry["replies"] = {m.id: m.reply_count for m in session}
-
-    # New sessions, once they've ended.
-    fresh = [_message(m, people) for m in raw if not cursor or _when(m["date"]) > cursor]
-    quiet = sessions.gap(rules.get("gap_hours"))
-    ended = [s for s in sessions.split(fresh, quiet) if sessions.closed(s, quiet, now)]
-    for session in ended[:SESSIONS_PER_SYNC]:
-        session = [_with_replies(client, team_id, by_id[m.id], people) for m in session]
-        if _session_item(session, channel, team_id, rules, config, store) is not None:
-            done += 1
-        state["cursor"] = session[-1].when.isoformat()
-        recent.append({"row_id": f"clickup-session-{channel['id']}-{session[0].id}", "first": session[0].when.isoformat(), "last": session[-1].when.isoformat(),
-                       "messages": [m.id for m in session], "replies": {m.id: m.reply_count for m in session}})
-    state["recent"] = recent
-    store.set_state(key, state)
-    return done
+    """Saves the channel's ended sessions, a batch per run, and rebuilds ones with new replies."""
+    return channel_sessions.save(_chat_channel(client, team_id, channel, rules, people, config, store), days,
+                                 config, store, SESSIONS_PER_SYNC)
 
 
 # --- The job ---------------------------------------------------------------------

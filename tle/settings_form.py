@@ -66,15 +66,27 @@ class Section:
 CHANNEL_FIELDS = [
     Field("id", "Channel", "pick", source="slack"),
     Field("mode", "Save", "select", default="reaction",
-          options=[("all", "Every message"), ("reaction", "Reacted messages and threads")]),
+          options=[("sessions", "Every message, as sessions"), ("reaction", "Reacted messages and threads")]),
     Field("reaction", "Reaction", "emoji", default="round_pushpin", show_if=("mode", "reaction")),
+    Field("from", "Starting from", "date",
+          "Nothing posted before this is saved. An earlier date reads the channel's history, which uses more "
+          "model calls. Changing this or the mode later never re-reads: to start over, remove the channel and add "
+          "it again.", ""),
+    Field("gap_hours", "A session ends after", "number", "hours without a new message", 4,
+          show_if=("mode", "sessions")),
+    Field("views", "Pull out views", "bool",
+          "The main model lists each person's positions in every topic. About 4 times the cost of finding topics.",
+          False, show_if=("mode", "sessions")),
     Field("include_threads", "Save whole threads", "bool",
-          "The parent and every reply as one item, rebuilt as the thread grows", True),
+          "The parent and every reply as one item, rebuilt as the thread grows", True, show_if=("mode", "reaction")),
+    Field("look_back_days", "Days to keep watching", "number",
+          "New reactions, and new replies that update a session, are picked up for this many days after a message",
+          7, inline=True),
     Field("include_files", "Save shared files", "bool",
           "Documents, PDFs, images and voice clips, as items of their own. Their author is worked out from the content.", True),
-    Field("include_links", "Save shared links", "bool",
-          "Each linked page, such as a LinkedIn post or an article, is read and saved as its own item, "
-          "credited to whoever wrote it, with the message as a note.", True),
+    Field("include_links", "Save shared links", "bool", "Each linked page is read and saved as its own item", True),
+    Field("visibility", "Visibility", "select", default="",
+          options=[("", "Default for Slack"), ("public", "Public"), ("private", "Private")]),
 ]
 CHANNEL_DEFAULTS = {f.path: f.default for f in CHANNEL_FIELDS if f.path not in ("id", "name")}
 
@@ -205,9 +217,17 @@ def values(sources: dict) -> dict[str, dict[str, Any]]:
         for f in section.fields:
             value = _get(data, f.path)
             current[f.name] = f.default if value is None else value
-        current["rows"] = {r.key: (r.shown or (lambda d, k=r.key: list(d.get(k) or [])))(data) for r in section.rows}
+        current["rows"] = {r.key: [_shown_row(row) for row in (r.shown or (lambda d, k=r.key: list(d.get(k) or [])))(data)]
+                           for r in section.rows}
         out[section.key] = current
     return out
+
+
+def _shown_row(row: Any) -> Any:
+    """A channel saved in the retired "every message" mode (all) is shown, and saved, as sessions."""
+    if isinstance(row, dict) and row.get("mode") == "all":
+        return {**row, "mode": "sessions"}
+    return row
 
 
 def _number(raw: str, label: str) -> int | float | None:

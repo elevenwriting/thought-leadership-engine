@@ -1518,3 +1518,106 @@ def test_shared_page_is_only_credited_to_people_it_shows(setup, monkeypatch):
     shared.save_pages(links, commentary=True, via="clickup", place="ClickUp #news", metadata={}, config=config, store=store)
     assert store.get(google.row_id) is None  # context for her comments, not an item of its own
     assert store.get(post.row_id).authors == ["Jane Smith"] and not store.get(post.row_id).reading
+
+
+class FakeSlackHistory:
+    """A Slack channel's history for the session job: the same conversation as FakeChat (ClickUp),
+    with a bot post and a join that aren't anyone's words, and a file shared in a thread."""
+
+    def __init__(self, now):
+        hour = 3600
+        ts = lambda h: f"{now - h * hour:.6f}"  # noqa: E731
+        jane, mo = "U01234567", "U07654321"
+        self.top = [
+            {"ts": ts(30), "user": jane, "text": "Should the playbook be a deck or an ebook?"},
+            {"ts": ts(29), "user": mo, "text": "Ebook. Decks don't get read.", "reply_count": 1},
+            {"ts": ts(28.5), "subtype": "channel_join", "user": "U0BOT", "text": "joined"},
+            {"ts": ts(28.2), "bot_id": "B1", "text": "Reminder: standup"},
+            {"ts": ts(28), "user": jane, "text": "Fair :joy:"},
+            {"ts": ts(10), "user": mo, "text": "H1 should lead with the keyword."},
+            {"ts": ts(9), "user": jane, "text": "Not at the cost of resonance."},
+            {"ts": ts(1), "user": mo, "text": "Webinar recorded."},
+        ]
+        self.ebook = self.top[1]["ts"]
+        self.thread = [self.top[1], {"ts": ts(20), "user": "U09999999", "text": "Agreed, ebook.", "thread_ts": self.ebook,
+                                     "files": [{"id": "F1", "name": "outline.txt", "url_private_download": "https://files/F1"}]}]
+        self.history_calls = []
+
+    def conversations_history(self, channel, oldest, limit, cursor=None):
+        self.history_calls.append(float(oldest))
+        newest_first = sorted((m for m in self.top if float(m["ts"]) >= float(oldest)), key=lambda m: -float(m["ts"]))
+        return {"messages": newest_first, "response_metadata": {}}
+
+    def conversations_replies(self, channel, ts, limit, cursor=None):
+        assert ts == self.ebook
+        return {"messages": self.thread, "response_metadata": {}}
+
+    def users_info(self, user):
+        return {"user": {"real_name": "Outside Person"}}
+
+    def conversations_info(self, channel):
+        return {"channel": {"name": "marketing"}}
+
+    def chat_getPermalink(self, channel, message_ts):
+        return {"permalink": f"https://slack.example/{message_ts}"}
+
+
+def test_slack_sessions_work_like_clickup(setup, monkeypatch):
+    import time as time_module
+    from datetime import date
+
+    from tle.connectors import slack
+
+    config, store = setup
+    monkeypatch.setattr("tle.topics.LLM", FakeTopics)
+    monkeypatch.setattr(slack, "_download_file", lambda f: b"Outline: why ebooks beat decks.")
+    monkeypatch.setattr("tle.attribution.LLM", AttributionLLM)
+    monkeypatch.setattr(AttributionLLM, "generate_json", lambda self, *a, **k: {"authors": [], "date": "", "reason": ""})
+    start = (date.today() - timedelta(days=3)).isoformat()
+    config.sources["slack"] = {"channels": [{"id": "C1", "name": "marketing", "mode": "sessions", "from": start,
+                                             "include_links": False}]}
+    fake = FakeSlackHistory(time_module.time())
+    sessions_saved = lambda: sorted(i.row_id for i in store.search(SearchQuery(source_types=["slack"], limit=50)))
+
+    # A batch at a time, oldest first; the session still going isn't saved; bots and joins aren't words.
+    monkeypatch.setattr(slack, "SESSIONS_PER_SYNC", 1)
+    assert slack.sync(config, store, client=fake) == {"channels": 1, "sessions": 1}
+    first = store.get(f"slack-session-C1-{fake.top[0]['ts']}".replace(".", ""))
+    lines = first.extracted_text.splitlines()
+    assert lines[0].startswith("#1 Jane Smith (") and lines[1].startswith("#2 Mo Jones (")
+    assert lines[2].startswith("    ↳ Outside Person (") and lines[2].endswith("Agreed, ebook.")
+    assert lines[3].startswith("#3 Jane Smith (") and lines[3].endswith("Fair 😂")  # Slack's emoji codes, as emoji
+    assert "Reminder" not in first.extracted_text and "joined" not in first.extracted_text
+    meta = first.source_metadata
+    assert meta["place"] == "slack:C1" and meta["channel_id"] == "C1" and meta["label"] == "#marketing" and meta["session"]
+    assert first.citation.startswith("JANE SMITH, MO JONES, OUTSIDE PERSON - SLACK #MARKETING")
+    # Its topics are found, and the file shared in the thread is an item of its own.
+    assert [t.title for t in store.topics_for([first.row_id])] == ["Playbook format", "Unassigned"]
+    assert store.get("slack-file-F1") is not None
+    slack.sync(config, store, client=fake)
+    assert len(sessions_saved()) == 2 and slack.sync(config, store, client=fake)["sessions"] == 0
+
+    # Channels saving reacted messages aren't read here; their events still are.
+    config.sources["slack"]["channels"][0]["mode"] = "reaction"
+    assert slack.sync(config, store, client=fake) == {"channels": 0, "sessions": 0}
+    # And a channel set to sessions (or the old every-message mode) ignores live message events.
+    config.sources["slack"]["channels"][0]["mode"] = "all"
+    slack.handle_event({"event": {"type": "message", "channel": "C1", "user": "U01234567", "ts": "1.1", "text": "hi"}},
+                       config, store)
+    assert len(sessions_saved()) == 2
+
+
+def test_slack_text_and_names_of_people_who_left(setup):
+    from tle.connectors.slack import _Names
+
+    config, _ = setup
+
+    class Users:
+        def users_info(self, user):
+            return {"user": {"name": "bibsasha", "real_name": None, "deleted": True,
+                             "profile": {"real_name": "Aleks", "display_name": "Aleks"}}}
+
+    names = _Names(Users(), config)
+    assert names("U0LEFT") == "Aleks"  # left the workspace: the name is only in the profile
+    assert names.text("Agreed :+1::skin-tone-2: see <https://x.com/?a=1&amp;b=2|this> &lt;3") == \
+        "Agreed 👍🏻 see https://x.com/?a=1&b=2 <3"

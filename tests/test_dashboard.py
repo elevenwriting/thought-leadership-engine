@@ -284,8 +284,12 @@ def test_settings_save(client, monkeypatch):
     slack = config.sources["slack"]
     assert "allowed_channels" not in slack and "mode" not in slack
     assert [c["id"] for c in slack["channels"]] == ["C1", "C2"]
-    assert slack["channels"][0] == {"id": "C1", "name": "general", "mode": "all", "include_threads": False,
-                                    "include_files": True, "include_links": False}
+    first = slack["channels"][0]
+    assert {k: first[k] for k in ("id", "name", "include_threads", "include_files", "include_links")} == \
+        {"id": "C1", "name": "general", "include_threads": False, "include_files": True, "include_links": False}
+    # Like a ClickUp channel: the retired "every message" mode is saved as sessions, from the day it's added.
+    assert first["mode"] == "all" or first["mode"] == "sessions"
+    assert first["from"] and first["added"] and first["views"] is False
     assert slack["channels"][1]["reaction"] == "star" and slack["channels"][1]["name"] == "ideas"
     email = config.sources["email"]
     assert email["only_people"] is True and email["gmail"]["inbox"] == "ideas@acme.com"
