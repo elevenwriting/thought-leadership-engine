@@ -424,4 +424,19 @@ file instead, put `KEY=value` lines in a git-ignored file and pass it with `--en
 
 ## License
 
-MIT
+[Common Public Attribution License 1.0](LICENSE) (CPAL-1.0), an open-source license approved
+by the OSI. You can use, change and share the Expertise Database, including inside your company,
+on these conditions:
+
+- **Keep the attribution.** Every copy that people use, changed or not, must keep showing
+  "A Free Eleven Content Project" with the Eleven Content logo and a link to
+  [11content.com](https://11content.com), as the dashboard's header and footer do now. This
+  also applies when it's built into something larger. Keeping it doesn't mean Eleven Content
+  endorses or supports your version.
+- **Share your changes.** If you change the code and let anyone outside your own organisation use
+  it, including as a hosted service, you must make your changed source available under the same
+  license.
+- **Keep the notices.** Leave the license notice at the top of each file and the
+  [LICENSE](LICENSE) file in place.
+
+It comes with no warranty. The [LICENSE](LICENSE) file is the full, binding text.

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Eleven Content Ltd. Licensed under the Common Public Attribution License 1.0
+# (CPAL-1.0), which requires keeping the "A Free Eleven Content Project" attribution. See LICENSE.
+
 """The Cloud Run service: ingestion endpoints, the Slack bot, and a query API
 (which the ChatGPT action and the web form use). Email, Drive and ClickUp are read by
 scheduled jobs instead (`tle sync-email`, `tle sync-drive`, `tle sync-clickup`)."""

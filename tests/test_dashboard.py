@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Eleven Content Ltd. Licensed under the Common Public Attribution License 1.0
+# (CPAL-1.0), which requires keeping the "A Free Eleven Content Project" attribution. See LICENSE.
+
 """The dashboard, sign-in, events, people and versioned settings, on SQLite."""
 
 from __future__ import annotations
@@ -827,7 +830,7 @@ def test_no_company_name_shows_none(client):
     """A company that hasn't named itself yet isn't shown as Eleven Content."""
     client.post("/dashboard/settings", data={"csrf": client.csrf, "company": ""})
     page = client.get("/dashboard/items").text
-    assert "Experiment</span>" in page and "•</span>" not in page
+    assert "Project</span>" in page and "•</span>" not in page
     assert "Eleven Content · Expertise Database" not in page and "<span>Expertise Database</span>" in page
     client.post("/dashboard/settings", data={"csrf": client.csrf, "company": "Acme Ltd"})
     assert '•</span> Acme Ltd' in client.get("/dashboard/items").text

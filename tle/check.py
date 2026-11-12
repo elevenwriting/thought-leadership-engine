@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Eleven Content Ltd. Licensed under the Common Public Attribution License 1.0
+# (CPAL-1.0), which requires keeping the "A Free Eleven Content Project" attribution. See LICENSE.
+
 """`tle check`: whether everything the engine needs is in place, in plain words, with what to do
 about anything that isn't. People run it after setting up; agents run it after each step.
 

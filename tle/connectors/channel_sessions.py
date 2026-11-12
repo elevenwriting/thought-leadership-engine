@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Eleven Content Ltd. Licensed under the Common Public Attribution License 1.0
+# (CPAL-1.0), which requires keeping the "A Free Eleven Content Project" attribution. See LICENSE.
+
 """Saving a chat channel as sessions, for any chat source (ClickUp and Slack).
 
 A source hands over a `Channel`: how to read its top-level messages since a time, how to fetch a

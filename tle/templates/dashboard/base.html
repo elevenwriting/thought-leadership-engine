@@ -1,3 +1,5 @@
+{# Copyright (c) 2026 Eleven Content Ltd. Licensed under the Common Public Attribution License 1.0
+   (CPAL-1.0), which requires keeping the "A Free Eleven Content Project" attribution. See LICENSE. #}
 <!doctype html>
 <html lang="en">
 <head>
@@ -14,7 +16,7 @@
 <div class="app">
 <header class="top">
   <div class="top-inner">
-    <a class="product" href="/dashboard"><span class="product-name">Expertise Database</span><span class="product-sub">A Free Eleven Content Experiment{% if company and company != "Expertise Database" %} <span aria-hidden="true">•</span> {{ company }}{% endif %}</span></a>
+    <a class="product" href="/dashboard"><span class="product-name">Expertise Database</span><span class="product-sub">A Free Eleven Content Project{% if company and company != "Expertise Database" %} <span aria-hidden="true">•</span> {{ company }}{% endif %}</span></a>
     {% if user %}
     <nav class="main" aria-label="Main">
       {% for key, label, href in [("items", "Items", "/dashboard/items"), ("people", "People", "/dashboard/people"),
@@ -59,7 +61,8 @@
 <footer class="site-footer">
   <div class="site-footer-inner">
     <span>{% if company and company != "Expertise Database" %}{{ company }} · {% endif %}Expertise Database</span>
-    <span class="credit"><a class="credit-mark" href="https://11content.com" aria-hidden="true" tabindex="-1"><img class="logo on-light" src="/dashboard/logo-light.svg" alt=""><img class="logo on-dark" src="/dashboard/logo-dark.svg" alt=""></a>A Free <a href="https://11content.com">Eleven Content</a> Experiment</span>
+    {# The license (CPAL-1.0, Exhibit B) requires this attribution, with the logo and link, to stay visible. #}
+    <span class="credit"><a class="credit-mark" href="https://11content.com" aria-hidden="true" tabindex="-1"><img class="logo on-light" src="/dashboard/logo-light.svg" alt=""><img class="logo on-dark" src="/dashboard/logo-dark.svg" alt=""></a>A Free <a href="https://11content.com">Eleven Content</a> Project</span>
   </div>
   <div class="footer-bar"></div>
 </footer>

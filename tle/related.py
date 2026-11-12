@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Eleven Content Ltd. Licensed under the Common Public Attribution License 1.0
+# (CPAL-1.0), which requires keeping the "A Free Eleven Content Project" attribution. See LICENSE.
+
 """Related links across sources: "this meeting, this chat session and this document are about the
 same thing."
 

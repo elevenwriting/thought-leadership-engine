@@ -3,7 +3,7 @@ name = "thought-leadership-engine"
 version = "0.1.0"
 description = "Capture your company's thought leadership, tag it with AI, and query it from Claude, ChatGPT or any MCP client."
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "CPAL-1.0" }
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115",

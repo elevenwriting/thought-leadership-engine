@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Eleven Content Ltd. Licensed under the Common Public Attribution License 1.0
+# (CPAL-1.0), which requires keeping the "A Free Eleven Content Project" attribution. See LICENSE.
+
 """Works out who said or wrote something, and when, when the person submitting it may
 not be the author (e.g. someone emailing in a colleague's notes or a forwarded thread).
 

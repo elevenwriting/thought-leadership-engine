@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Eleven Content Ltd. Licensed under the Common Public Attribution License 1.0
+# (CPAL-1.0), which requires keeping the "A Free Eleven Content Project" attribution. See LICENSE.
+
 """One small interface over Claude, OpenAI and Gemini.
 
 Everything the pipeline asks a model for is either structured JSON (tagging, image

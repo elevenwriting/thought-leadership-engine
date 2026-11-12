@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Eleven Content Ltd. Licensed under the Common Public Attribution License 1.0
+# (CPAL-1.0), which requires keeping the "A Free Eleven Content Project" attribution. See LICENSE.
+
 """The engine's secrets (keys and tokens, from Secret Manager or the environment): trimmed when
 the engine starts, and blanked out of anything it shows or saves, such as error messages."""
 

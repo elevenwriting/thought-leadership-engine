@@ -57,7 +57,8 @@ gradient top bar, Georgia for headings and Inter for text, rounded cards and pil
 amber for counts and the current page. Every colour, font and radius is in
 [tle/static/theme.css](../tle/static/theme.css), for light and dark mode; `dashboard.css` holds
 the layout and only reads the theme's variables. Eleven Content's logo sits small in the footer,
-beside "A Free Eleven Content Experiment". There's no setting for another logo or colour.
+beside "A Free Eleven Content Project", and the header carries the same phrase. The license
+(CPAL-1.0) requires that attribution to stay visible. There's no setting for another logo or colour.
 
 Dark mode follows the operating system until someone uses the sun and moon switch in the
 header, which overrides it in that browser and is remembered there.

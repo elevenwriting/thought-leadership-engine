@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Eleven Content Ltd. Licensed under the Common Public Attribution License 1.0
+# (CPAL-1.0), which requires keeping the "A Free Eleven Content Project" attribution. See LICENSE.
+
 """MCP server for Claude Desktop, Claude Code, Cursor or any MCP client.
 
 The service serves it at /mcp, behind the API token (see api.py), which is how people connect.

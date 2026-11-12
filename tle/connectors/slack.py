@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Eleven Content Ltd. Licensed under the Common Public Attribution License 1.0
+# (CPAL-1.0), which requires keeping the "A Free Eleven Content Project" attribution. See LICENSE.
+
 """Slack: the channels picked on Sources, each saved in one of two ways, exactly as ClickUp Chat.
 
 - `sessions` (every message): a scheduled job reads the channel's history and saves it as

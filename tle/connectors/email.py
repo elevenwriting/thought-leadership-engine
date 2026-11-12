@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Eleven Content Ltd. Licensed under the Common Public Attribution License 1.0
+# (CPAL-1.0), which requires keeping the "A Free Eleven Content Project" attribution. See LICENSE.
+
 """Email: a dedicated inbox (e.g. ideas@yourcompany.com) that people send or forward notes,
 transcripts and voice notes to. Everything that arrives is ingested, subject to the
 sender rules below. The inbox, in Google Workspace, is read by a scheduled job

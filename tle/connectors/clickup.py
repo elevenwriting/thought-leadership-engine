@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Eleven Content Ltd. Licensed under the Common Public Attribution License 1.0
+# (CPAL-1.0), which requires keeping the "A Free Eleven Content Project" attribution. See LICENSE.
+
 """ClickUp: a scheduled job that saves tagged tasks, Chat messages people react to, and Docs.
 
 Each place under `sources.clickup.places` (a space, folder or list) and each Chat channel under

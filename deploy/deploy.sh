@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Eleven Content Ltd. Licensed under the Common Public Attribution License 1.0
+# (CPAL-1.0), which requires keeping the "A Free Eleven Content Project" attribution. See LICENSE.
 # Deploys the engine to Google Cloud: the API on Cloud Run, a Cloud SQL Postgres database, the
 # keys in Secret Manager, scheduled jobs for the email inbox, Drive, ClickUp and Slack, and the
 # dashboard as a second service behind Google sign-in (IAP).

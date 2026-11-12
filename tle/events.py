@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Eleven Content Ltd. Licensed under the Common Public Attribution License 1.0
+# (CPAL-1.0), which requires keeping the "A Free Eleven Content Project" attribution. See LICENSE.
+
 """Records what happened, for the dashboard's Activity page and each item's history.
 
 Recording never gets in the way: if the events table can't be written, the failure is

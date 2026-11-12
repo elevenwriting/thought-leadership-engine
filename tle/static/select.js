@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Eleven Content Ltd. Licensed under the Common Public Attribution License 1.0
+// (CPAL-1.0), which requires keeping the "A Free Eleven Content Project" attribution. See LICENSE.
+
 // Turns each <select> into a dropdown with a search box and, for <select multiple>, checkboxes.
 // The select stays in the form, hidden, so forms submit as before. Add data-native to keep one as it is,
 // and data-search to word its search box.

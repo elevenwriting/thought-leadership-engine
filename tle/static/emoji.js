@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Eleven Content Ltd. Licensed under the Common Public Attribution License 1.0
+// (CPAL-1.0), which requires keeping the "A Free Eleven Content Project" attribution. See LICENSE.
+
 // An emoji picker for Slack and ClickUp reactions: Slack's names for common emoji, a search box, and
 // any other name (a workspace's custom emoji) can be typed in and used as it is.
 (() => {

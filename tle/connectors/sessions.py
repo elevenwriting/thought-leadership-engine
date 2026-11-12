@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Eleven Content Ltd. Licensed under the Common Public Attribution License 1.0
+# (CPAL-1.0), which requires keeping the "A Free Eleven Content Project" attribution. See LICENSE.
+
 """Chat sessions: a channel's messages, split wherever it went quiet, saved as one item each.
 
 A session is a burst of activity: it ends when no top-level message has been posted for the

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Eleven Content Ltd. Licensed under the Common Public Attribution License 1.0
+# (CPAL-1.0), which requires keeping the "A Free Eleven Content Project" attribution. See LICENSE.
+
 """What chat-style connectors (Slack, ClickUp) and the inbox share: the links in a conversation.
 
 The database holds the company's own thinking, so what people say about a link is what's kept:
