@@ -1,11 +1,11 @@
 ---
-name: thought-leadership
-description: Uses the company's thought leadership database (via the thought-leadership MCP server) to answer "what's our stance on X", find content gaps, spot trending themes, turn transcripts into posts, build case studies and write content briefs grounded in what the company's own people have said. Use whenever the user asks about the company's opinions, expertise, content ideas, content calendar, briefs, or wants to save something a colleague said or wrote.
+name: expertise-database
+description: Uses the company's thought leadership database (via the expertise-database MCP server) to answer "what's our stance on X", find content gaps, spot trending themes, turn transcripts into posts, build case studies and write content briefs grounded in what the company's own people have said. Use whenever the user asks about the company's opinions, expertise, content ideas, content calendar, briefs, or wants to save something a colleague said or wrote.
 ---
 
-# Thought leadership
+# Expertise Database
 
-The `thought-leadership` MCP server holds what the company's people have said and written
+The `expertise-database` MCP server holds what the company's people have said and written
 (Slack, meetings, voice notes, interviews, documents, posts), each tagged by theme and
 narrative, with an author, a citation and a visibility.
 

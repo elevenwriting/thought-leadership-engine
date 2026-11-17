@@ -32,7 +32,7 @@ def _load_env_file(path: Path) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    parser = argparse.ArgumentParser(prog="tle", description="Thought Leadership Engine")
+    parser = argparse.ArgumentParser(prog="tle", description="Expertise Database")
     parser.add_argument("--env-file", type=Path, metavar="PATH",
                         help="For development: read KEY=value lines (keys, TLE_DEV_USER...) from this file first.")
     sub = parser.add_subparsers(dest="command", required=True)

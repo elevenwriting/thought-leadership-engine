@@ -322,7 +322,7 @@ gcloud secrets versions access latest --secret tle-tle-api-token
 **Claude Code:**
 
 ```bash
-claude mcp add --transport http thought-leadership https://YOUR-SERVICE-URL/mcp --header "Authorization: Bearer YOUR-TOKEN"
+claude mcp add --transport http expertise-database https://YOUR-SERVICE-URL/mcp --header "Authorization: Bearer YOUR-TOKEN"
 ```
 
 **Claude Desktop, Cursor and other clients** that take a local command: use
@@ -331,7 +331,7 @@ claude mcp add --transport http thought-leadership https://YOUR-SERVICE-URL/mcp 
 ```json
 {
   "mcpServers": {
-    "thought-leadership": {
+    "expertise-database": {
       "command": "npx",
       "args": ["mcp-remote", "https://YOUR-SERVICE-URL/mcp", "--header", "Authorization: Bearer YOUR-TOKEN"]
     }
@@ -342,7 +342,7 @@ claude mcp add --transport http thought-leadership https://YOUR-SERVICE-URL/mcp 
 claude.ai's web connectors expect a sign-in flow (OAuth) rather than a token, so they can't
 connect yet.
 
-Then install the skill in [`skills/claude/thought-leadership`](skills/claude/thought-leadership):
+Then install the skill in [`skills/claude/expertise-database`](skills/claude/expertise-database):
 upload the folder as a skill in Claude, or copy it to `~/.claude/skills/` for Claude Code.
 
 ### ChatGPT

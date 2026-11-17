@@ -80,7 +80,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     lifespan=lifespan,
-    title="Thought Leadership Engine",
+    title="Expertise Database",
     version="0.1.0",
     description="Capture, tag and query your company's thought leadership.",
     servers=[{"url": os.environ["PUBLIC_URL"]}] if os.environ.get("PUBLIC_URL") else None,

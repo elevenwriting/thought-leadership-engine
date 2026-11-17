@@ -47,7 +47,7 @@ nav.main.sliding:not(.ready) .nav-slide { transition: none; }
 .top .count.problem { background: #F04438; }
 .count.review { background: var(--amber); color: var(--amber-ink); }
 .top-end { display: flex; align-items: center; gap: 16px; font-size: 14px; color: var(--header-ink); flex: none; }
-/* The top bar's main action is amber, as on Workplace's side bar. */
+/* The top bar's main action is amber. */
 .top .button.primary { background: var(--amber); border-color: var(--amber); color: var(--amber-ink); }
 .top .button.primary:hover { background: var(--amber-hover); border-color: var(--amber-hover); color: var(--amber-ink); }
 .avatar { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; background: var(--surface-2); color: var(--ink); font: 600 13px/1 var(--font-body); cursor: pointer; }

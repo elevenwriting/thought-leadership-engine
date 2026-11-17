@@ -23,7 +23,7 @@ from .ingest import ingest_text
 from .store import SearchQuery, get_store
 
 mcp = MCPServer(
-    "thought-leadership",
+    "expertise-database",
     instructions=(
         "The company's captured thought leadership: what its people have said in Slack, meetings, "
         "voice notes, interviews, documents and posts, tagged by theme and narrative. Start with "

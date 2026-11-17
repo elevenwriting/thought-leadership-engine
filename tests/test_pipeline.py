@@ -365,7 +365,7 @@ class AttributionLLM:
         pass
 
     def generate_json(self, system, prompt, schema, images=None):
-        assert "Submitted by: christian@acme.com" in prompt
+        assert "Submitted by: sam@acme.com" in prompt
         return AttributionLLM.answer
 
 
@@ -373,38 +373,38 @@ def test_email_authors(setup, monkeypatch):
     from tle.connectors.email import process_raw
 
     config, store = setup
-    config.people.append(Person(name="Christian Rigg", emails=["christian@acme.com"]))
+    config.people.append(Person(name="Sam Patel", emails=["sam@acme.com"]))
     monkeypatch.setattr("tle.attribution.LLM", AttributionLLM)
 
     # Fields in the body win, and are stripped from the saved text.
-    raw = _raw_email("christian@acme.com", "Podcast notes",
+    raw = _raw_email("sam@acme.com", "Podcast notes",
                      "Author: Mo Jones\nDate: 2026-06-03\nType: interview\nVisibility: public\n\nRoadmaps are promises.")
     assert process_raw(raw, config, store) == (True, 1)
     [item] = store.search(SearchQuery(source_types=["interview"]))
     assert item.authors == ["Mo Jones"] and item.extracted_text == "Roadmaps are promises."
     assert item.visibility == "public" and item.date_created.date().isoformat() == "2026-06-03"
     assert item.source_metadata["author_source"] == "provided"
-    assert item.source_metadata["submitted_by"] == "christian@acme.com"
+    assert item.source_metadata["submitted_by"] == "sam@acme.com"
 
     # No fields: the LLM decides, including the date.
     AttributionLLM.answer = {"authors": ["Jane Smith"], "date": "2026-05-01", "reason": "Forwarded from Jane."}
-    process_raw(_raw_email("christian@acme.com", "Fwd: pricing", "---------- Forwarded message ---------\nFrom: Jane"), config, store)
+    process_raw(_raw_email("sam@acme.com", "Fwd: pricing", "---------- Forwarded message ---------\nFrom: Jane"), config, store)
     [item] = store.search(SearchQuery(text="Forwarded message"))
     assert item.authors == ["Jane Smith"] and item.source_metadata["author_source"] == "llm"
     assert item.date_created.date().isoformat() == "2026-05-01" and "author_needs_review" not in item.source_metadata
 
     # Someone outside the company: kept, but flagged.
     AttributionLLM.answer = {"authors": ["Pat Client"], "date": "", "reason": "Signed by Pat."}
-    process_raw(_raw_email("christian@acme.com", "client view", "Thanks, Pat"), config, store)
+    process_raw(_raw_email("sam@acme.com", "client view", "Thanks, Pat"), config, store)
     [item] = store.search(SearchQuery(text="Thanks, Pat"))
     assert item.authors == ["Pat Client"] and item.source_metadata["author_needs_review"]
     assert item.date_created.year == 2026  # the email's own date
 
     # Can't tell: the sender, flagged.
     AttributionLLM.answer = {"authors": [], "date": "", "reason": "No clues."}
-    process_raw(_raw_email("christian@acme.com", "misc", "Some thoughts."), config, store)
+    process_raw(_raw_email("sam@acme.com", "misc", "Some thoughts."), config, store)
     [item] = store.search(SearchQuery(text="Some thoughts"))
-    assert item.authors == ["Christian Rigg"] and item.source_metadata["author_source"] == "submitter"
+    assert item.authors == ["Sam Patel"] and item.source_metadata["author_source"] == "submitter"
     assert item.source_metadata["author_needs_review"]
 
 
@@ -894,7 +894,7 @@ def test_mcp_over_http(setup):
         assert c.post("/mcp", json=init, headers={**headers, "authorization": "Bearer wrong"}).status_code == 401
         signed = {**headers, "authorization": "Bearer secret"}
         r = c.post("/mcp", json=init, headers=signed, follow_redirects=False)
-        assert r.status_code == 200 and r.json()["result"]["serverInfo"]["name"] == "thought-leadership"
+        assert r.status_code == 200 and r.json()["result"]["serverInfo"]["name"] == "expertise-database"
         r = c.post("/mcp", headers=signed, json={"jsonrpc": "2.0", "id": 2, "method": "tools/call",
                                                  "params": {"name": "get_taxonomy", "arguments": {}}})
         assert "Acme Ltd" in r.json()["result"]["content"][0]["text"]

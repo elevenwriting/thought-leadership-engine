@@ -78,7 +78,7 @@ gcloud services enable "${APIS[@]}"
 
 echo "==> Service account"
 gcloud iam service-accounts describe "$SA" >/dev/null 2>&1 || \
-  gcloud iam service-accounts create "$SA_NAME" --display-name "Thought Leadership Engine"
+  gcloud iam service-accounts create "$SA_NAME" --display-name "Expertise Database"
 for role in "${ROLES[@]}"; do
   gcloud projects add-iam-policy-binding "$PROJECT" --member "serviceAccount:$SA" --role "$role" \
     --condition=None >/dev/null

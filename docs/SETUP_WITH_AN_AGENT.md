@@ -77,7 +77,7 @@ or open Sources, which shows each source in red until it works.
 
 ## 5. Connect Claude
 
-**Person:** in Claude Code, `claude mcp add --transport http thought-leadership <service address>/mcp
+**Person:** in Claude Code, `claude mcp add --transport http expertise-database <service address>/mcp
 --header "Authorization: Bearer <token>"`, with the token from
 `gcloud secrets versions access latest --secret tle-tle-api-token` (they run that themselves;
 don't print it). Then install the skill (see the README's Ways out). Ask Claude something
