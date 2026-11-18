@@ -6,6 +6,8 @@ it with AI, and build content on it from Claude, ChatGPT or any MCP client.
 From the brightonSEO talk *Best of Both Worlds: AI Content Systems with True Human EEAT*
 by [Christian Rigg](https://linkedin.com/in/christian-rigg), [Eleven Content](https://11content.com).
 
+![The Expertise Database dashboard: everything captured, with filters by theme, narrative, person and source, each item tagged and cited](docs/dashboard.webp)
+
 ```
  Capture                    Parse                     Organise               Query, ideate, refine
  ─────────                  ─────                     ────────               ─────────────────────
