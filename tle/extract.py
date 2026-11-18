@@ -53,6 +53,8 @@ def _captions_to_text(raw: str) -> str:
         line = line.strip()
         if not line or line == "WEBVTT" or line.isdigit() or "-->" in line:
             continue
+        # A WebVTT voice tag names the speaker: keep it, so quotes can be credited.
+        line = re.sub(r"^<v(?:\.[^ >]*)? ([^>]+)>", r"\1: ", line)
         lines.append(re.sub(r"<[^>]+>", "", line))
     return "\n".join(lines)
 

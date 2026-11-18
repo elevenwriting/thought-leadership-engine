@@ -15,10 +15,10 @@ import os
 from typing import Any
 
 # Each provider's starting model, for tagging and for audio. Changed under Models in Settings.
-MODELS = {"anthropic": "claude-sonnet-5-5", "openai": "gpt-5", "gemini": "gemini-2.5-flash"}
+MODELS = {"anthropic": "claude-sonnet-5-5", "openai": "gpt-5", "gemini": "gemini-3.5-flash"}
 # Cheaper models for quick jobs, such as finding the topics in a chat session.
-FAST_MODELS = {"anthropic": "claude-haiku-5-5", "openai": "gpt-5-mini", "gemini": "gemini-2.5-flash-lite"}
-AUDIO_MODELS = {"openai": "gpt-4o-transcribe", "gemini": "gemini-2.5-flash"}
+FAST_MODELS = {"anthropic": "claude-haiku-5-5", "openai": "gpt-5-mini", "gemini": "gemini-3.5-flash-lite"}
+AUDIO_MODELS = {"openai": "gpt-4o-transcribe", "gemini": "gemini-3.5-flash"}
 KEYS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
 
 _DEFAULTS: dict[str, Any] = {

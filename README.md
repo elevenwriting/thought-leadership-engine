@@ -226,6 +226,10 @@ content itself, with its links left inline. Each attachment becomes its own item
 [Shared links](#shared-links), except that a link sent with no comment is a deliberate save,
 like the web form's: the page is saved, credited to whoever wrote it.
 
+Use a new, empty mailbox (a user's own, not a group or an alias). The job reads everything in
+the inbox that doesn't carry its labels yet, so pointed at an inbox with mail in it, the first
+run would read, tag and label all of that mail.
+
 ### Shared links
 
 The database holds your company's own thinking, so when someone shares a link in Slack, ClickUp
@@ -423,6 +427,27 @@ tle check                       # what works and what to fix
 `TLE_DEV_USER` signs you in as that address, and is ignored on Cloud Run. To keep these in a
 file instead, put `KEY=value` lines in a git-ignored file and pass it with `--env-file`, e.g.
 `tle --env-file .env serve`. Only for development: deployed, keys are Secret Manager secrets.
+
+### Testing a deployment end to end
+
+[`scripts/e2e.py`](scripts/e2e.py) runs every way in and out that needs no other account against a
+deployed service, with the model chosen in Settings:
+- text, a link, and each kind of file: PDF, Word, image, transcript and voice note;
+- every REST operation;
+- the OpenAPI schema ChatGPT imports, checked against an Action's limits;
+- the MCP server, directly and through `mcp-remote` (as Claude Desktop and Cursor connect).
+
+It saves real items, labelled "E2E test", and archives them at the end. Run it against a test
+deployment, because the API can't delete items:
+
+```bash
+export TLE_URL=https://YOUR-SERVICE-URL
+read -s TLE_API_TOKEN && export TLE_API_TOKEN
+python scripts/e2e.py --label claude
+```
+
+The audio check needs macOS (`say`) and ffmpeg, and `mcp-remote` needs Node; `--skip-remote` leaves
+it out.
 
 ## License
 

@@ -881,6 +881,28 @@ def test_check_says_what_to_fix(setup, monkeypatch):
     assert "✗ Model for tagging and authors" in text and text.rstrip().endswith("to fix.")
 
 
+
+def test_check_tries_each_model(setup, monkeypatch):
+    from tle import check
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    monkeypatch.setattr("tle.connectors.drive_sync.list_folders", lambda: [])
+    setup[0].sources["email"]["gmail"]["inbox"] = ""
+    tried = []
+    monkeypatch.setattr(check, "_try_model", lambda model, kind: tried.append((model.model, kind)))
+    results = {r.name: r for r in check.run()}
+    assert results["Model for tagging and authors"].status == check.OK and tried[0][1] == "tagging"
+
+    def retired(model, kind):
+        raise RuntimeError("This model is no longer available to new users.")
+
+    setup[0].llm.provider, setup[0].llm.api_key_env = "gemini", "GEMINI_API_KEY"
+    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    monkeypatch.setattr(check, "_try_model", retired)
+    result = {r.name: r for r in check.run()}["Model for tagging and authors"]
+    assert result.status == check.FAIL and "no longer available" in result.detail and "Models" in result.fix
+    assert check._silence()[:4] == b"RIFF"
+
 def test_mcp_over_http(setup):
     from fastapi.testclient import TestClient
 
@@ -1624,3 +1646,28 @@ def test_slack_text_and_names_of_people_who_left(setup):
     assert names("U0LEFT") == "Aleks"  # left the workspace: the name is only in the profile
     assert names.text("Agreed :+1::skin-tone-2: see <https://x.com/?a=1&amp;b=2|this> &lt;3") == \
         "Agreed 👍🏻 see https://x.com/?a=1&b=2 <3"
+
+
+def test_vtt_keeps_speakers(setup):
+    from tle.extract import extract_text
+
+    config, _ = setup
+
+    vtt = (b"WEBVTT\n\n00:00:01.000 --> 00:00:04.000\n<v Sam Patel>Case studies are evidence.\n\n"
+           b"00:00:04.000 --> 00:00:08.000\n<v.loud Alex Moore>Agreed, <b>lead</b> with numbers.\n")
+    assert extract_text(vtt, "call.vtt", config) == "Sam Patel: Case studies are evidence.\nAlex Moore: Agreed, lead with numbers."
+
+
+def test_file_upload_explains_a_model_failure(setup, monkeypatch):
+    from fastapi.testclient import TestClient
+    from tle import api
+
+    def refuse(*args, **kwargs):
+        raise RuntimeError("You have no credits remaining.")
+
+    monkeypatch.setenv("TLE_API_TOKEN", "secret")
+    monkeypatch.setattr(api, "extract_text", refuse)
+    client = TestClient(api.app)
+    res = client.post("/ingest/file", files={"file": ("note.mp3", b"ID3", "audio/mpeg")},
+                      headers={"Authorization": "Bearer secret"})
+    assert res.status_code == 400 and "no credits remaining" in res.text

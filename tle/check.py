@@ -4,8 +4,9 @@
 """`tle check`: whether everything the engine needs is in place, in plain words, with what to do
 about anything that isn't. People run it after setting up; agents run it after each step.
 
-Nothing here writes anything or uses model tokens: keys are checked by listing models, and
-Slack, ClickUp, Drive and the inbox by reading what they can see.
+Nothing here writes anything. Each model chosen in Settings gets one tiny request (a few tokens,
+or half a second of silence for audio), because only a real request shows a retired model or an
+account with no credit; Slack, ClickUp, Drive and the inbox are checked by reading what they can see.
 """
 
 from __future__ import annotations
@@ -89,23 +90,62 @@ def _model(kind: str) -> Result:
     if model.provider == "anthropic":
         import anthropic
 
-        from .llm import anthropic_client
-
         try:
-            anthropic_client(model.api_key).models.list(limit=1)
+            _try_model(model, kind)
         except anthropic.BadRequestError as exc:
             if "workspace" not in str(exc):
                 raise
             return Result(name, FAIL, "The Anthropic key is an organisation-wide one, so it needs a workspace named.",
                           "Add ANTHROPIC_WORKSPACE_ID (Console > Settings > Workspaces) as a secret, "
                           "or use a key created inside a workspace.")
+    else:
+        try:
+            _try_model(model, kind)
+        except Exception as exc:  # noqa: BLE001
+            return Result(name, FAIL, f"{model.provider} {model.model} refused a test request: {str(exc)[:300]}",
+                          "Check the key and that the account has credit, or pick another model under Models "
+                          "in Settings.")
+    return Result(name, OK, f"{model.provider} {model.model}; it answered a test request.")
+
+
+def _silence() -> bytes:
+    """Half a second of silent 16 kHz WAV, for testing an audio model."""
+    import io
+    import wave
+
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(b"\0\0" * 8000)
+    return buffer.getvalue()
+
+
+def _try_model(model, kind: str) -> None:
+    """One tiny request to the model, which raises if the model, key or account can't be used."""
+    if model.provider == "anthropic":
+        from .llm import anthropic_client
+
+        anthropic_client(model.api_key).messages.create(
+            model=model.model, max_tokens=5, messages=[{"role": "user", "content": "Say OK."}])
     elif model.provider == "openai":
         import openai
 
-        openai.OpenAI(api_key=model.api_key).models.list()
+        client = openai.OpenAI(api_key=model.api_key)
+        if kind == "transcription":
+            client.audio.transcriptions.create(model=model.model, file=("check.wav", _silence(), "audio/wav"))
+        else:
+            client.responses.create(model=model.model, input="Say OK.", max_output_tokens=16)
+    elif model.provider == "gemini":
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=model.api_key)  # kept in a variable: it closes once nothing holds it
+        client.models.generate_content(
+            model=model.model, contents="Say OK.", config=types.GenerateContentConfig(max_output_tokens=5))
     else:
-        return Result(name, OK, f"{model.provider} {model.model}; {model.api_key_env} is set (not tested).")
-    return Result(name, OK, f"{model.provider} {model.model}; the key works.")
+        raise ValueError(f"Unknown provider {model.provider}")
 
 
 def _api_token() -> Result:
@@ -193,9 +233,21 @@ def _email() -> Result:
 
     from .connectors.email_gmail import _credentials
 
+    from google.auth.exceptions import RefreshError
+
     service = build("gmail", "v1", credentials=_credentials(inbox, settings.get("gmail", {}).get("service_account")),
                     cache_discovery=False)
-    profile = service.users().getProfile(userId="me").execute()
+    try:
+        profile = service.users().getProfile(userId="me").execute()
+    except RefreshError as exc:
+        if "unauthorized_client" not in str(exc):
+            raise
+        return Result("Email inbox", FAIL, f"Not allowed to read {inbox} yet.",
+                      "A Workspace admin allows the service account's client ID (the deploy prints it; it's the "
+                      "Unique ID under IAM > Service accounts) the scope https://www.googleapis.com/auth/gmail.modify, "
+                      "in Admin console > Security > Access and data control > API controls > Domain-wide "
+                      "delegation. It can take a few minutes to apply. Google says the same when the address is a "
+                      "group or an alias rather than a user's own mailbox, so check that too.")
     return Result("Email inbox", OK, f"Can read {profile.get('emailAddress', inbox)}.")
 
 

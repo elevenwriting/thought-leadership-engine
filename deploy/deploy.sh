@@ -64,7 +64,8 @@ if [[ -n "$DASHBOARD_ACCESS" ]]; then
   done
 fi
 
-gcloud config set project "$PROJECT" >/dev/null
+# For this script's gcloud commands only, so your own default project is left as it was.
+export CLOUDSDK_CORE_PROJECT="$PROJECT"
 CLOUD_SQL=""
 [[ -z "${DATABASE_URL:-}" ]] && CLOUD_SQL=1
 

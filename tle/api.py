@@ -32,6 +32,7 @@ from .ingest import prepare_item
 from .links import default_source_type
 from .links import fetch as fetch_link
 from .models import Item
+from .secrets import redact
 from .store import SearchQuery, get_store
 
 logging.basicConfig(level=logging.INFO)
@@ -234,8 +235,15 @@ async def _file_input(file: UploadFile, authors: str, source_type: str | None, v
     data = await file.read()
     filename = file.filename or "upload"
     mime = guess_mime(filename, file.content_type)
-    # Extraction can call an LLM (images, audio), so it runs off the event loop.
-    text = await run_in_threadpool(extract_text, data, filename, get_config(), mime)
+    # Extraction can call an LLM (images, audio), so it runs off the event loop. When the model
+    # refuses (no credit, a bad key), say why instead of failing with a bare server error.
+    try:
+        text = await run_in_threadpool(extract_text, data, filename, get_config(), mime)
+    except ValueError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logging.exception("Reading %s failed", filename)
+        raise ValueError(f"Couldn't read {filename}: {redact(str(exc))}") from exc
     body = IngestIn(authors=_split([authors]) if authors else [], source_type=source_type or None,
                     visibility=visibility or None, date_created=date_created,
                     label=label or filename.rsplit(".", 1)[0], note=note or "")
